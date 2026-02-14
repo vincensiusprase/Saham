@@ -1,11 +1,12 @@
 # ==========================================
 # MARKET SCANNER - GITHUB ACTIONS VERSION
+# (USING ta LIBRARY)
 # ==========================================
 
 import yfinance as yf
 import pandas as pd
-import pandas_ta as ta
 import numpy as np
+import ta
 import gspread
 from gspread_dataframe import set_with_dataframe
 from tqdm import tqdm
@@ -19,13 +20,10 @@ from google.oauth2.service_account import Credentials
 
 warnings.filterwarnings('ignore')
 
-# ==========================================
-# KONFIGURASI GLOBAL
-# ==========================================
 SPREADSHEET_ID = "1bUzWbd1pqTZO37cZ1rQzTelqUcykz_oOwULOCmK-HNc"
 
 # ==========================================
-# LOAD GOOGLE CREDENTIAL DARI GITHUB SECRET
+# GOOGLE SHEET CONNECTION
 # ==========================================
 def connect_gsheet(target_sheet_name):
     try:
@@ -44,7 +42,6 @@ def connect_gsheet(target_sheet_name):
 
         creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
         gc = gspread.authorize(creds)
-
         sh = gc.open_by_key(SPREADSHEET_ID)
 
         try:
@@ -92,17 +89,32 @@ def analyze_sector(sector_name, ticker_list):
             price = float(df["Close"].iloc[-1])
             ma20 = float(df["Close"].rolling(20).mean().iloc[-1])
 
-            macd = df.ta.macd()
-            if macd is None:
+            # ======================
+            # TECHNICAL INDICATORS
+            # ======================
+
+            # RSI
+            rsi_indicator = ta.momentum.RSIIndicator(close=df["Close"], window=14)
+            df["RSI"] = rsi_indicator.rsi()
+            rsi_val = df["RSI"].iloc[-1]
+
+            # MACD
+            macd_indicator = ta.trend.MACD(close=df["Close"])
+            df["MACD"] = macd_indicator.macd()
+            df["MACD_SIGNAL"] = macd_indicator.macd_signal()
+
+            macd_line = df["MACD"].iloc[-1]
+            macd_signal = df["MACD_SIGNAL"].iloc[-1]
+
+            if pd.isna(macd_line) or pd.isna(macd_signal) or pd.isna(rsi_val):
                 continue
 
-            macd_line = macd.iloc[-1, 0]
-            macd_signal = macd.iloc[-1, 2]
-            rsi_val = df.ta.rsi().iloc[-1]
-
-            # ===== FIBO =====
+            # ======================
+            # FIBO
+            # ======================
             lookback = 120
             recent = df.iloc[-lookback:]
+
             high_swing = float(recent["High"].max())
             low_swing = float(recent["Low"].min())
 
@@ -112,9 +124,11 @@ def analyze_sector(sector_name, ticker_list):
             target_jp = int(high_swing + (range_price * 0.618))
 
             upside_jp = (target_jp - price) / price
-            potensi_max = f"{round(upside_jp*100,1)}%"
+            potensi_max = round(upside_jp * 100, 1)
 
-            # ===== LOGIC =====
+            # ======================
+            # LOGIC
+            # ======================
             is_uptrend = price > ma20
             is_macd = macd_line > macd_signal
             is_rsi = rsi_val < 70
@@ -140,17 +154,18 @@ def analyze_sector(sector_name, ticker_list):
                 "Stop Loss": stop_loss,
                 "Target Aman": target_aman,
                 "Target Jackpot": target_jp,
-                "Potensi MAX": potensi_max
+                "Potensi MAX (%)": potensi_max
             })
 
-        except Exception:
+        except Exception as e:
+            print(f"Error {ticker}: {e}")
             continue
 
     return pd.DataFrame(results)
 
 
 # ==========================================
-# SECTOR CONFIG (MINIMAL TEST DULU)
+# TEST SECTOR
 # ==========================================
 SECTOR_CONFIG = {
     "TEST": ["BBCA.JK", "BBRI.JK", "TLKM.JK"]
@@ -176,7 +191,7 @@ if __name__ == "__main__":
         )
 
         df_final = df_final.sort_values(
-            by=["Score", "Potensi MAX"],
+            by=["Score", "Potensi MAX (%)"],
             ascending=[False, False]
         ).drop(columns=["Score"])
 
