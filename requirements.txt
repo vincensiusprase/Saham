@@ -1,11 +1,9 @@
 yfinance
 pandas
-yfinance
-pandas
-ta
 numpy
 gspread
 gspread-dataframe
-google-auth
 tqdm
 pytz
+google-auth
+ta
