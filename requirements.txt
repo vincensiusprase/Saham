@@ -1,0 +1,9 @@
+yfinance
+pandas
+pandas_ta
+numpy
+gspread
+gspread-dataframe
+google-auth
+tqdm
+pytz
