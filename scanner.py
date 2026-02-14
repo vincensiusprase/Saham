@@ -176,7 +176,8 @@ def analyze_sector(sector_name, ticker_list):
             alasan_text = ", ".join(alasan)
 
             potensi_max = round(((target_jp - price) / price) * 100, 1)
-            potensi_aman = round((target_aman - price) / price) *100, 1)
+            potensi_aman = round(((target_aman - price) / price) * 100, 1)
+            
             results.append({
                 "Ticker": ticker,
                 "Tanggal": tgl_skrg,
