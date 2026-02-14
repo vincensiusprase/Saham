@@ -176,7 +176,7 @@ def analyze_sector(sector_name, ticker_list):
             alasan_text = ", ".join(alasan)
 
             potensi_max = round(((target_jp - price) / price) * 100, 1)
-
+            potensi_aman = round((target_aman - price) / price) *100,1)
             results.append({
                 "Ticker": ticker,
                 "Tanggal": tgl_skrg,
@@ -193,6 +193,7 @@ def analyze_sector(sector_name, ticker_list):
                 "Est. Waktu Aman (hari)": est_aman,
                 "Target Jackpot": target_jp,
                 "Est. Waktu JP (hari)": est_jp,
+                "Potensi Aman (%)": potensi_aman,
                 "Potensi MAX (%)": potensi_max,
                 "Tipe Swing Disarankan": tipe_swing,
                 "Alasan Rekomendasi": alasan_text,
