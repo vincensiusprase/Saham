@@ -102,41 +102,76 @@ def analyze_sector(sector_name, ticker_list):
             if pd.isna(macd_line) or pd.isna(macd_signal) or pd.isna(rsi):
                 continue
 
-            # ===== FIBO =====
+            # ===== FIBONACCI BREAKOUT MODEL =====
             lookback = 120
             recent = df.iloc[-lookback:]
+
             high_swing = float(recent["High"].max())
             low_swing = float(recent["Low"].min())
             range_price = high_swing - low_swing
 
-            target_aman = int(high_swing)
-            target_jp = int(high_swing + (range_price * 0.618))
+            # Level Retracement
+            fibo_levels = [
+                        high_swing - (range_price * 0.786),
+                        high_swing - (range_price * 0.618),
+                        high_swing - (range_price * 0.5),
+                        high_swing - (range_price * 0.382),
+                        high_swing - (range_price * 0.236),
+                        high_swing
+                        ]
 
-            stop_loss = int(df["Low"].iloc[-10:].min() * 0.97)
+            fibo_levels = sorted(fibo_levels)
 
-            # ===== LOGIC =====
+            # Cari target terdekat di atas harga sekarang
+            target_aman = None
+            target_jp = None
+
+            for level in fibo_levels:
+                if level > price:
+                if not target_aman:
+                target_aman = level
+                elif not target_jp:
+                target_jp = level
+                break
+
+            # Jika sudah dekat high
+            if not target_aman:
+                target_aman = high_swing
+
+            if not target_jp:
+                target_jp = high_swing + (range_price * 0.618)
+
+            target_aman = int(target_aman)
+            target_jp = int(target_jp)
+
+            # ===== STOP LOSS (ATR BASED) =====
+            recent_low = df["Low"].iloc[-5:].min()
+            stop_loss = int(recent_low - atr)
+
+            # ===== BREAKOUT LOGIC =====
             is_uptrend = price > ma20
             is_macd = macd_line > macd_signal
-            is_rsi = rsi < 70
+            is_rsi = 50 < rsi < 70
             is_vol_break = vol_today > (1.5 * vol_ma20)
+            is_near_high = price > (high_swing * 0.95)
 
             posisi_ma = "DI ATAS MA20" if is_uptrend else "DI BAWAH MA20"
 
-            # ===== Risk Reward =====
+            # ===== RISK REWARD =====
             if price > stop_loss:
                 rr = round((target_aman - price) / (price - stop_loss), 2)
             else:
                 rr = 0
 
-            # ===== Estimasi Waktu =====
+            # ===== ESTIMASI WAKTU =====
             if atr > 0:
-                est_aman = round((target_aman - price) / atr)
-                est_jp = round((target_jp - price) / atr)
+                est_aman = max(1, round((target_aman - price) / atr))
+                est_jp = max(1, round((target_jp - price) / atr))
             else:
                 est_aman = "-"
                 est_jp = "-"
 
-            # ===== ATR Percentage =====
+            # ===== ATR PERCENTAGE =====
             atr_pct = (atr / price) * 100 if price > 0 else 0
 
             if atr_pct > 3:
@@ -146,38 +181,42 @@ def analyze_sector(sector_name, ticker_list):
             else:
                 tipe_swing = "Swing Bulanan"
 
-            # ===== SMART SCORE =====
+            # ===== SCORE BREAKOUT HUNTER =====
             score = 0
+
             if is_uptrend: score += 2
             if is_macd: score += 2
             if is_rsi: score += 1
-            if is_vol_break: score += 2
+            if is_vol_break: score += 3
             if rr >= 2: score += 2
 
-            if score >= 7:
+            # ===== ACTION =====
+            if score >= 8:
                 action = "🔥 STRONG BUY"
-            elif score >= 4:
+            elif score >= 5:
                 action = "🟢 BUY"
-            elif score >= 2:
-                action = "🟡 WAIT"
+            elif score >= 3:
+                action = "🟡 WAIT Breakout"
             else:
                 action = "⚪ PANTAU"
 
-            # ===== Alasan =====
+            # ===== ALASAN =====
             alasan = []
+
             if is_uptrend: alasan.append("Trend naik")
             if is_macd: alasan.append("MACD bullish")
-            if is_vol_break: alasan.append("Volume breakout")
-            if rr >= 2: alasan.append("RR bagus")
+            if is_vol_break: alasan.append("Volume breakout kuat")
+            if is_rsi: alasan.append("RSI sehat")
+            if rr >= 2: alasan.append("Risk/Reward menarik")
 
             if not alasan:
-                alasan.append("Belum cukup konfirmasi")
+                    alasan.append("Belum ada konfirmasi breakout")
 
             alasan_text = ", ".join(alasan)
 
             potensi_max = round(((target_jp - price) / price) * 100, 1)
             potensi_aman = round(((target_aman - price) / price) * 100, 1)
-            
+
             results.append({
                 "Ticker": ticker,
                 "Tanggal": tgl_skrg,
