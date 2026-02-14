@@ -128,11 +128,11 @@ def analyze_sector(sector_name, ticker_list):
 
             for level in fibo_levels:
                 if level > price:
-                if not target_aman:
-                target_aman = level
-                elif not target_jp:
-                target_jp = level
-                break
+                    if not target_aman:
+                        target_aman = level
+                    elif not target_jp:
+                        target_jp = level
+                        break
 
             # Jika sudah dekat high
             if not target_aman:
