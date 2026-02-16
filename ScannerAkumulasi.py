@@ -150,12 +150,12 @@ def analyze_sector(sector_name, ticker_list):
             # SCORING & CLASSIFICATION
             # ==============================
             acc_score = 0
-            if base_condition: acc_score += 20
-            if is_volume_shift: acc_score += 20
-            if volatility_contracting: acc_score += 15
-            if spring: acc_score += 20
-            if obv_trend: acc_score += 15
-            if 40 < rsi < 60: acc_score += 10
+            if base_condition: acc_score += 2
+            if is_volume_shift: acc_score += 2
+            if volatility_contracting: acc_score += 1.5
+            if spring: acc_score += 2
+            if obv_trend: acc_score += 1.5
+            if 40 < rsi < 60: acc_score += 1
 
             # Tipe Akumulasi
             if spring:
