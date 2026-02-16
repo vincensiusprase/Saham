@@ -79,10 +79,15 @@ def analyze_sector(sector_name, ticker_list):
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
 
+            if df.empty:
+                continue
+
             price = df["Close"].iloc[-1]
 
+            # --- PERBAIKAN DI SINI ---
             if isinstance(price, pd.Series):
-            price = price.values[0]
+                price = price.values[0]
+            # -------------------------
 
             price = float(price)
 
@@ -170,6 +175,7 @@ def analyze_sector(sector_name, ticker_list):
             if obv_trend: acc_score += 15
             if 40 < rsi < 60: acc_score += 10
 
+            tipe = ""
             if spring:
                 tipe = "Spring Wyckoff"
             elif base_condition and is_volume_shift:
@@ -177,6 +183,7 @@ def analyze_sector(sector_name, ticker_list):
             else:
                 tipe = "Early Base"
 
+            action = ""
             if acc_score >= 75 and rr >= 2:
                 action = "💎 STRONG ACCUMULATION"
             elif acc_score >= 60:
@@ -213,7 +220,8 @@ def analyze_sector(sector_name, ticker_list):
 # ==========================================
 SECTOR_CONFIG = {
     "TEST": [
-        "TOWR.JK", "FUTR.JK", "PIPA.JK" ]
+        "TOWR.JK", "FUTR.JK", "PIPA.JK" 
+    ]
 }
 
 # ==========================================
