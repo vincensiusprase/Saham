@@ -138,7 +138,7 @@ def check_news_sentiment(ticker_symbol):
 
         headline = news_titles[0] if news_titles else "-"
         # Potong headline biar rapi
-        if len(headline) > 60: headline = headline[:57] + "..."
+        if len(headline) > 100: headline = headline[:97] + "..."
         
         return f"{narrative} | {headline}", sentiment_score
 
