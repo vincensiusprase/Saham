@@ -59,6 +59,9 @@ def connect_gsheet(target_sheet_name):
 def analyze_sector(sector_name, ticker_list):
 
     tz_jkt = pytz.timezone("Asia/Jakarta")
+    # 🔥 FITUR BARU: Ambil waktu sekarang
+    waktu_update = datetime.now(tz_jkt).strftime("%Y-%m-%d %H:%M:%S")
+    
     results = []
 
     print(f"\n🚀 Scan {sector_name} | Total: {len(ticker_list)} saham")
@@ -209,7 +212,8 @@ def analyze_sector(sector_name, ticker_list):
                 "Potensi MAX (%)": round(potensi_max, 2),
                 "Tipe Akumulasi": tipe,
                 "Alasan Rekomendasi": alasan_text,
-                "Acc Score": acc_score
+                "Acc Score": acc_score,
+                "Last Update": waktu_update  # <--- KOLOM BARU
             })
 
         except Exception as e:
@@ -223,7 +227,7 @@ def analyze_sector(sector_name, ticker_list):
         "volatility_contracting", "spring", "RSI", "obv_trend", "Risk/Reward", 
         "Action", "Stop Loss", "Target Aman", "Est. Waktu Aman", "Target Jackpot", 
         "Est. Waktu JP", "Potensi Aman (%)", "Potensi MAX (%)", 
-        "Tipe Akumulasi", "Alasan Rekomendasi", "Acc Score"
+        "Tipe Akumulasi", "Alasan Rekomendasi", "Acc Score", "Last Update" # <--- KOLOM BARU
     ]
     
     # Pastikan hanya mengurutkan jika DataFrame tidak kosong
