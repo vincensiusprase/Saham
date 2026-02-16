@@ -68,16 +68,16 @@ def analyze_sector(sector_name, ticker_list):
 
     for ticker in ticker_list:
         try:
-            df = yf.download(
+        df = yf.download(
                 ticker,
                 period="1y",
                 progress=False,
-                auto_adjust=False,
-                threads=False
-            )
+                auto_adjust=True,
+                threads=False)
 
-            if df.empty or len(df) < 200:
-                continue
+            # 🔥 FIX MultiIndex column
+        if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
 
             price = float(df["Close"].iloc[-1])
 
