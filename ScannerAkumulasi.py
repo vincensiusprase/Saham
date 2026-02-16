@@ -166,9 +166,9 @@ def analyze_sector(sector_name, ticker_list):
                 tipe = "Early Base"
 
             # Action Label
-            if acc_score >= 75 and rr >= 2:
+            if acc_score >= 7.5 and rr >= 2:
                 action = "💎 STRONG ACCUMULATION"
-            elif acc_score >= 60:
+            elif acc_score >= 6:
                 action = "🟢 EARLY ACCUMULATION"
             else:
                 action = "⚪ WATCHLIST"
