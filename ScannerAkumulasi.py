@@ -1,5 +1,5 @@
 # ==========================================
-# MARKET SCANNER - PRO VERSION
+# MARKET SCANNER - PRO VERSION (UPDATED COLUMNS)
 # ==========================================
 
 import yfinance as yf
@@ -59,9 +59,6 @@ def connect_gsheet(target_sheet_name):
 def analyze_sector(sector_name, ticker_list):
 
     tz_jkt = pytz.timezone("Asia/Jakarta")
-    waktu_skrg = datetime.now(tz_jkt).strftime("%H:%M")
-    tgl_skrg = datetime.now(tz_jkt).strftime("%Y-%m-%d")
-
     results = []
 
     print(f"\n🚀 Scan {sector_name} | Total: {len(ticker_list)} saham")
@@ -83,66 +80,51 @@ def analyze_sector(sector_name, ticker_list):
                 continue
 
             price = df["Close"].iloc[-1]
-
-            # --- PERBAIKAN DI SINI ---
             if isinstance(price, pd.Series):
                 price = price.values[0]
-            # -------------------------
-
             price = float(price)
 
             # ==============================
-            # BASE CONDITION
+            # INDICATOR CALCULATIONS
             # ==============================
+            
+            # 1. Base Condition
             high_120 = df["High"].rolling(120).max().iloc[-1]
             low_120 = df["Low"].rolling(120).min().iloc[-1]
             range_pct = (high_120 - low_120) / price
             base_condition = range_pct < 0.35
 
-            # ==============================
-            # VOLUME SHIFT
-            # ==============================
+            # 2. Volume Logic
             vol_ma50 = df["Volume"].rolling(50).mean().iloc[-1]
             vol_10 = df["Volume"].iloc[-10:].mean()
             is_volume_shift = vol_10 > vol_ma50
 
-            # ==============================
-            # ATR
-            # ==============================
+            # 3. Volatility / ATR
             high_low = df["High"] - df["Low"]
             high_close = np.abs(df["High"] - df["Close"].shift())
             low_close = np.abs(df["Low"] - df["Close"].shift())
-
             ranges = pd.concat([high_low, high_close, low_close], axis=1)
             true_range = ranges.max(axis=1)
-
+            
             atr_now = true_range.rolling(14).mean().iloc[-1]
             atr_prev = true_range.rolling(14).mean().iloc[-30]
             volatility_contracting = atr_now < atr_prev
 
-            # ==============================
-            # SPRING
-            # ==============================
+            # 4. Spring Logic
             support = low_120
             recent_low = df["Low"].iloc[-5:].min()
             spring = recent_low < support * 0.98 and price > support
 
-            # ==============================
-            # RSI
-            # ==============================
+            # 5. RSI
             delta = df["Close"].diff()
             gain = delta.clip(lower=0)
             loss = -delta.clip(upper=0)
-
             avg_gain = gain.rolling(14).mean()
             avg_loss = loss.rolling(14).mean()
-
             rs = avg_gain / avg_loss
             rsi = float((100 - (100 / (1 + rs))).iloc[-1])
 
-            # ==============================
-            # OBV
-            # ==============================
+            # 6. OBV
             obv = (np.sign(df["Close"].diff()) * df["Volume"]).fillna(0).cumsum()
             obv_trend = obv.iloc[-1] > obv.iloc[-20]
 
@@ -165,7 +147,7 @@ def analyze_sector(sector_name, ticker_list):
             potensi_max = ((target_jp - price) / price) * 100
 
             # ==============================
-            # SCORE
+            # SCORING & CLASSIFICATION
             # ==============================
             acc_score = 0
             if base_condition: acc_score += 20
@@ -175,7 +157,7 @@ def analyze_sector(sector_name, ticker_list):
             if obv_trend: acc_score += 15
             if 40 < rsi < 60: acc_score += 10
 
-            tipe = ""
+            # Tipe Akumulasi
             if spring:
                 tipe = "Spring Wyckoff"
             elif base_condition and is_volume_shift:
@@ -183,7 +165,7 @@ def analyze_sector(sector_name, ticker_list):
             else:
                 tipe = "Early Base"
 
-            action = ""
+            # Action Label
             if acc_score >= 75 and rr >= 2:
                 action = "💎 STRONG ACCUMULATION"
             elif acc_score >= 60:
@@ -191,17 +173,40 @@ def analyze_sector(sector_name, ticker_list):
             else:
                 action = "⚪ WATCHLIST"
 
+            # Alasan Rekomendasi (Logic Builder)
+            reasons = []
+            if base_condition: reasons.append("Konsolidasi")
+            if is_volume_shift: reasons.append("Vol Spike")
+            if spring: reasons.append("Spring Signal")
+            if obv_trend: reasons.append("OBV Naik")
+            if volatility_contracting: reasons.append("Volatilitas Rendah")
+            
+            alasan_text = ", ".join(reasons) if reasons else "Normal Market"
+
+            # ==============================
+            # FINAL DATA STRUCTURING
+            # ==============================
             results.append({
                 "Ticker": ticker,
                 "Harga Skrg": int(price),
-                "RSI": round(rsi,2),
-                "Risk/Reward": round(rr,2),
-                "Target Aman": int(target_aman),
-                "Target Jackpot": int(target_jp),
-                "Potensi Aman (%)": round(potensi_aman,2),
-                "Potensi MAX (%)": round(potensi_max,2),
-                "Tipe Akumulasi": tipe,
+                "Base Condition": base_condition,
+                "Vol MA 50": int(vol_ma50),
+                "is_volume_shift": is_volume_shift,
+                "volatility_contracting": volatility_contracting,
+                "spring": spring,
+                "RSI": round(rsi, 2),
+                "obv_trend": obv_trend,
+                "Risk/Reward": round(rr, 2),
                 "Action": action,
+                "Stop Loss": int(stop_loss),
+                "Target Aman": int(target_aman),
+                "Est. Waktu Aman": "1-2 Minggu",   # Estimasi Statis
+                "Target Jackpot": int(target_jp),
+                "Est. Waktu JP": "1-3 Bulan",      # Estimasi Statis
+                "Potensi Aman (%)": round(potensi_aman, 2),
+                "Potensi MAX (%)": round(potensi_max, 2),
+                "Tipe Akumulasi": tipe,
+                "Alasan Rekomendasi": alasan_text,
                 "Acc Score": acc_score
             })
 
@@ -210,7 +215,20 @@ def analyze_sector(sector_name, ticker_list):
 
     df_result = pd.DataFrame(results)
 
+    # Urutkan kolom sesuai permintaan user
+    desired_order = [
+        "Ticker", "Harga Skrg", "Base Condition", "Vol MA 50", "is_volume_shift", 
+        "volatility_contracting", "spring", "RSI", "obv_trend", "Risk/Reward", 
+        "Action", "Stop Loss", "Target Aman", "Est. Waktu Aman", "Target Jackpot", 
+        "Est. Waktu JP", "Potensi Aman (%)", "Potensi MAX (%)", 
+        "Tipe Akumulasi", "Alasan Rekomendasi", "Acc Score"
+    ]
+    
+    # Pastikan hanya mengurutkan jika DataFrame tidak kosong
     if not df_result.empty:
+        # Reorder columns
+        df_result = df_result[desired_order]
+        # Sort rows by Score
         df_result = df_result.sort_values(by="Acc Score", ascending=False)
 
     return df_result
@@ -220,7 +238,7 @@ def analyze_sector(sector_name, ticker_list):
 # ==========================================
 SECTOR_CONFIG = {
     "TEST": [
-        "TOWR.JK", "FUTR.JK", "PIPA.JK" 
+        "TOWR.JK", "FUTR.JK", "PIPA.JK", "BBRI.JK", "GOTO.JK"
     ]
 }
 
