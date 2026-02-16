@@ -59,9 +59,6 @@ def connect_gsheet(target_sheet_name):
 def analyze_sector(sector_name, ticker_list):
 
     tz_jkt = pytz.timezone("Asia/Jakarta")
-    # 🔥 AMBIL WAKTU SEKARANG (WIB)
-    waktu_update = datetime.now(tz_jkt).strftime("%Y-%m-%d %H:%M:%S")
-    
     results = []
 
     print(f"\n🚀 Scan {sector_name} | Total: {len(ticker_list)} saham")
@@ -169,20 +166,12 @@ def analyze_sector(sector_name, ticker_list):
                 tipe = "Early Base"
 
             # Action Label
-            # Prioritas 1: Setup Sempurna (Skor Tinggi + RR Bagus)
-            if acc_score >= 70 and rr >= 2:
+            if acc_score >= 7 and rr >= 2:
                 action = "💎 STRONG ACCUMULATION"
-            
-            # Prioritas 2: Setup Spesifik (Spring Wyckoff)
-            # Spring adalah sinyal kuat, jadi meskipun skor total belum 70, tetap layak dipantau
-            elif spring and acc_score >= 50:
+            elif spring and acc_score >= 5:
                 action = "⚡ SPRING POTENTIAL"
-
-            # Prioritas 3: Akumulasi Awal (Skor Lumayan)
-            elif acc_score >= 50:
+            elif acc_score >= 5:
                 action = "🟢 EARLY ACCUMULATION"
-            
-            # Sisanya
             else:
                 action = "⚪ WATCHLIST"
 
@@ -220,8 +209,7 @@ def analyze_sector(sector_name, ticker_list):
                 "Potensi MAX (%)": round(potensi_max, 2),
                 "Tipe Akumulasi": tipe,
                 "Alasan Rekomendasi": alasan_text,
-                "Acc Score": acc_score,
-                "Last Update": waktu_update  # <--- KOLOM BARU DITAMBAHKAN
+                "Acc Score": acc_score
             })
 
         except Exception as e:
@@ -229,13 +217,13 @@ def analyze_sector(sector_name, ticker_list):
 
     df_result = pd.DataFrame(results)
 
-    # Urutkan kolom sesuai permintaan user + Last Update
+    # Urutkan kolom sesuai permintaan user
     desired_order = [
         "Ticker", "Harga Skrg", "Base Condition", "Vol MA 50", "is_volume_shift", 
         "volatility_contracting", "spring", "RSI", "obv_trend", "Risk/Reward", 
         "Action", "Stop Loss", "Target Aman", "Est. Waktu Aman", "Target Jackpot", 
         "Est. Waktu JP", "Potensi Aman (%)", "Potensi MAX (%)", 
-        "Tipe Akumulasi", "Alasan Rekomendasi", "Acc Score", "Last Update"
+        "Tipe Akumulasi", "Alasan Rekomendasi", "Acc Score"
     ]
     
     # Pastikan hanya mengurutkan jika DataFrame tidak kosong
@@ -321,4 +309,60 @@ SECTOR_CONFIG = {
     ],
     "IDXENERGY": [
     "ADRO.JK", "BUMI.JK", "PGAS.JK", "PTBA.JK", "ITMG.JK", "DEWA.JK", "CUAN.JK", "HRUM.JK", "PTRO.JK", "RAJA.JK", "MEDC.JK", "ADMR.JK",
-    "HUMI.JK", "ENRG.JK", "BULL.JK", "TOBA.JK", "AADI.JK", "RATU.JK", "CBRE.JK", "INDY.JK", "AKRA.JK", "ELSA.JK", "GTSI.JK", "BI
+    "HUMI.JK", "ENRG.JK", "BULL.JK", "TOBA.JK", "AADI.JK", "RATU.JK", "CBRE.JK", "INDY.JK", "AKRA.JK", "ELSA.JK", "GTSI.JK", "BIPI.JK",
+    "COAL.JK", "BSSR.JK", "LEAD.JK", "APEX.JK", "TEBE.JK", "ATLA.JK", "SOCI.JK", "FIRE.JK", "PSAT.JK", "GEMS.JK", "DOID.JK", "DSSA.JK",
+    "SGER.JK", "IATA.JK", "BBRM.JK", "BYAN.JK", "ABMM.JK", "TPMA.JK", "MAHA.JK", "BOAT.JK", "KKGI.JK", "MBSS.JK", "WOWS.JK", "CGAS.JK",
+    "RMKE.JK", "WINS.JK", "MTFN.JK", "MBAP.JK", "UNIQ.JK", "RMKO.JK", "SMMT.JK", "SICO.JK", "BSML.JK", "PSSI.JK", "DWGL.JK", "TAMU.JK",
+    "ALII.JK", "ITMA.JK", "RUIS.JK", "CNKO.JK", "TCPI.JK", "HILL.JK", "BOSS.JK", "PKPK.JK", "MYOH.JK", "SEMA.JK", "ARII.JK", "GTBO.JK",
+    "MCOL.JK", "RGAS.JK", "SHIP.JK", "BESS.JK", "RIGS.JK", "JSKY.JK", "KOPI.JK", "PTIS.JK", "CANI.JK", "ARTI.JK", "INPS.JK", "MKAP.JK",
+    "AIMS.JK", "HITS.JK", "SUNI.JK", "TRAM.JK", "SURE.JK", "SMRU.JK", "SUGI.JK"
+    ],
+    "IDXHEALTH": [
+    "KLBF.JK", "SIDO.JK", "KAEF.JK", "PYFA.JK", "MIKA.JK", "DKHH.JK", "SILO.JK", "HEAL.JK", "TSPC.JK", "INAF.JK", "CHEK.JK", "IRRA.JK", "SAME.JK", "MEDS.JK", "PRDA.JK", "MDLA.JK", "SURI.JK", "PRIM.JK", "HALO.JK", "OBAT.JK", "CARE.JK",
+    "MERK.JK", "DGNS.JK", "SOHO.JK", "BMHS.JK", "PEHA.JK", "SRAJ.JK", "MMIX.JK", "DVLA.JK", "OMED.JK", "PEVE.JK", "LABS.JK", "RSCH.JK", "MTMH.JK", "IKPM.JK", "PRAY.JK", "SCPI.JK", "RSGK.JK"
+    ],
+    "IDXINFRA": [
+    "TLKM.JK", "CDIA.JK", "ADHI.JK", "JSMR.JK", "WIKA.JK", "PTPP.JK", "INET.JK", "WSKT.JK", "BREN.JK", "PGEO.JK", "EXCL.JK", "ISAT.JK", "TOWR.JK", "SSIA.JK", "DATA.JK", "OASA.JK", "PPRE.JK", "TBIG.JK", "POWR.JK", "NRCA.JK", "WEGE.JK", "TOTL.JK",
+    "KETR.JK", "IPCC.JK", "KOKA.JK", "KBLV.JK", "MTEL.JK", "CENT.JK", "KRYA.JK", "GMFI.JK", "JAST.JK", "KEEN.JK", "JKON.JK", "ACST.JK", "ASLI.JK", "PBSA.JK", "IPCM.JK", "MORA.JK", "ARKO.JK", "MPOW.JK", "CMNP.JK", "LINK.JK", "HGII.JK", "DGIK.JK", "BDKR.JK",
+    "META.JK", "KARW.JK", "CASS.JK", "BUKK.JK", "TGRA.JK", "GOLD.JK", "BALI.JK", "PTDU.JK", "IDPR.JK", "PORT.JK", "TOPS.JK", "HADE.JK", "TAMA.JK", "BTEL.JK", "GHON.JK", "SUPR.JK", "MTPS.JK", "RONY.JK", "IBST.JK", "LCKM.JK", "PTPW.JK", "MTRA.JK"
+    ],
+    "IDXPROPERT": [
+    "CTRA.JK", "BSDE.JK", "PWON.JK", "SMRA.JK", "KLJA.JK", "PANI.JK", "BKSL.JK", "DADA.JK", "CBDK.JK", "DMAS.JK", "ASRI.JK", "LPKR.JK", "BSBK.JK", "REAL.JK", "ELTY.JK", "APLN.JK", "TRUE.JK", "TRIN.JK", "UANG.JK", "CSIS.JK", "DILD.JK", "KOCI.JK", "BEST.JK",
+    "LAND.JK", "DUTI.JK", "EMDE.JK", "LPLI.JK", "GRIA.JK", "VAST.JK", "BAPI.JK", "MTLA.JK", "SAGE.JK", "BBSS.JK", "HOMI.JK", "PUDP.JK", "RBMS.JK", "URBN.JK", "TARA.JK", "CBPE.JK", "MPRO.JK", "RODA.JK", "SATU.JK", "NASA.JK", "FMII.JK", "BKDP.JK", "GMTD.JK",
+    "PPRO.JK", "BAPA.JK", "PAMG.JK", "MMLP.JK", "PURI.JK", "GPRA.JK", "LPCK.JK", "MDLN.JK", "BCIP.JK", "ADCP.JK", "CITY.JK", "RISE.JK", "WINR.JK", "JRPT.JK", "AMAN.JK", "SMDM.JK", "INDO.JK", "ATAP.JK", "ASPI.JK", "KSIX.JK", "KBAG.JK", "NZIA.JK",
+    "NIRO.JK", "DART.JK", "BIPP.JK", "PLIN.JK", "RDTX.JK", "ROCK.JK", "MKPI.JK", "INPP.JK", "MTSM.JK", "POLL.JK", "POLI.JK", "OMRE.JK", "GAMA.JK", "POSA.JK", "BIKA.JK", "CPRI.JK", "ARMY.JK", "COWL.JK", "RIMO.JK", "LCGP.JK"
+    ],
+    "IDXTRANS": [
+    "PJHB.JK", "GIAA.JK", "SMDR.JK", "BIRD.JK", "BLOG.JK", "IMJS.JK", "ASSA.JK", "TMAS.JK", "LAJU.JK", "HAIS.JK", "KLAS.JK", "MITI.JK", "JAYA.JK", "NELY.JK", "WEHA.JK", "TNCA.JK", "CMPP.JK", "MPXL.JK", "KJEN.JK", "SDMU.JK", "TRUK.JK", "PURA.JK", "HATM.JK",
+    "TAXI.JK", "ELPI.JK", "AKSI.JK", "GTRA.JK", "TRJA.JK", "MIRA.JK", "BLTA.JK", "SAPX.JK", "SAFE.JK", "LRNA.JK", "DEAL.JK", "BPTR.JK", "HELI.JK"
+    ]
+}
+
+# ==========================================
+# MAIN
+# ==========================================
+if __name__ == "__main__":
+
+    print("🤖 START MARKET SCANNER PRO 🤖")
+
+    for sheet_name, saham_list in SECTOR_CONFIG.items():
+
+        df_final = analyze_sector(sheet_name, saham_list)
+
+        if df_final.empty:
+            print(f"⚠️ Tidak ada data untuk {sheet_name}")
+            continue
+
+        ws = connect_gsheet(sheet_name)
+
+        if ws:
+            try:
+                ws.clear()
+                set_with_dataframe(ws, df_final)
+                print(f"✅ {sheet_name} Updated!")
+            except Exception as e:
+                print(f"❌ Upload Error: {e}")
+
+        time.sleep(1)
+
+    print("🏁 SELESAI 🏁")
