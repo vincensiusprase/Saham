@@ -1,5 +1,5 @@
 # ==========================================
-# MARKET SCANNER ACCUMULATION
+# MARKET SCANNER ACCUMULATIOn
 # ==========================================
 
 import yfinance as yf
@@ -59,7 +59,6 @@ def connect_gsheet(target_sheet_name):
 def analyze_sector(sector_name, ticker_list):
 
     tz_jkt = pytz.timezone("Asia/Jakarta")
-    # 🔥 FITUR BARU: Ambil waktu sekarang
     waktu_update = datetime.now(tz_jkt).strftime("%Y-%m-%d %H:%M:%S")
     
     results = []
@@ -91,11 +90,14 @@ def analyze_sector(sector_name, ticker_list):
             # INDICATOR CALCULATIONS
             # ==============================
             
-            # 1. Base Condition
+            # 1. Base Condition (Sideways)
             high_120 = df["High"].rolling(120).max().iloc[-1]
             low_120 = df["Low"].rolling(120).min().iloc[-1]
-            range_pct = (high_120 - low_120) / price
-            base_condition = range_pct < 0.35
+            range_span = high_120 - low_120
+            
+            # Cek range harga (%)
+            range_pct = range_span / price
+            base_condition = range_pct < 0.40  # Sedikit diperlonggar jadi 40%
 
             # 2. Volume Logic
             vol_ma50 = df["Volume"].rolling(50).mean().iloc[-1]
@@ -118,7 +120,7 @@ def analyze_sector(sector_name, ticker_list):
             recent_low = df["Low"].iloc[-5:].min()
             spring = recent_low < support * 0.98 and price > support
 
-            # 5. RSI
+            # 5. RSI & OBV
             delta = df["Close"].diff()
             gain = delta.clip(lower=0)
             loss = -delta.clip(upper=0)
@@ -127,27 +129,43 @@ def analyze_sector(sector_name, ticker_list):
             rs = avg_gain / avg_loss
             rsi = float((100 - (100 / (1 + rs))).iloc[-1])
 
-            # 6. OBV
             obv = (np.sign(df["Close"].diff()) * df["Volume"]).fillna(0).cumsum()
             obv_trend = obv.iloc[-1] > obv.iloc[-20]
 
             # ==============================
-            # TARGET & RISK
+            # TARGET & RISK (FIBONACCI LOGIC)
             # ==============================
-            target_aman = low_120 + (high_120 - low_120) * 0.5
-            target_jp = high_120
+            
+            # Stop Loss: Low - ATR (Buffer volatilitas)
             stop_loss = low_120 - atr_now
+
+            # Target Aman: Fibonacci Retracement 0.618 (Golden Ratio) dari Range
+            # Ini adalah resisten terkuat sebelum pucuk
+            target_aman = low_120 + (range_span * 0.618)
+            
+            # Target Jackpot: High 120 (Atap Kotak)
+            target_jp = high_120
+
+            # Target Moon: Fibonacci Extension 1.272 (Jika Breakout)
+            # Logika: Jika akumulasi sukses, harga akan terbang melewati atap
+            target_moon = high_120 + (range_span * 0.272) 
+
+            # Jika harga sudah melewati Target Aman, sesuaikan
+            if price > target_aman:
+                target_aman = target_jp # Geser target aman ke JP
+                target_jp = target_moon # Geser target JP ke Moon
 
             risk = price - stop_loss
             reward = target_aman - price
 
-            if risk <= 0:
-                continue
-
+            # Filter Safety
+            if risk <= 0: continue
+            
             rr = reward / risk
 
             potensi_aman = ((target_aman - price) / price) * 100
             potensi_max = ((target_jp - price) / price) * 100
+            potensi_moon = ((target_moon - price) / price) * 100
 
             # ==============================
             # SCORING & CLASSIFICATION
@@ -159,6 +177,9 @@ def analyze_sector(sector_name, ticker_list):
             if spring: acc_score += 2
             if obv_trend: acc_score += 1.5
             if 40 < rsi < 60: acc_score += 1
+            
+            # Bonus Score jika RR Ratio Sangat Bagus (> 3)
+            if rr >= 3: acc_score += 1
 
             # Tipe Akumulasi
             if spring:
@@ -178,13 +199,12 @@ def analyze_sector(sector_name, ticker_list):
             else:
                 action = "⚪ WATCHLIST"
 
-            # Alasan Rekomendasi (Logic Builder)
+            # Alasan Rekomendasi
             reasons = []
             if base_condition: reasons.append("Konsolidasi")
             if is_volume_shift: reasons.append("Vol Spike")
             if spring: reasons.append("Spring Signal")
             if obv_trend: reasons.append("OBV Naik")
-            if volatility_contracting: reasons.append("Volatilitas Rendah")
             
             alasan_text = ", ".join(reasons) if reasons else "Normal Market"
 
@@ -204,16 +224,16 @@ def analyze_sector(sector_name, ticker_list):
                 "Risk/Reward": round(rr, 2),
                 "Action": action,
                 "Stop Loss": int(stop_loss),
-                "Target Aman": int(target_aman),
-                "Est. Waktu Aman": "1-2 Minggu",   # Estimasi Statis
-                "Target Jackpot": int(target_jp),
-                "Est. Waktu JP": "1-3 Bulan",      # Estimasi Statis
+                "Target Aman (Fib 0.618)": int(target_aman),
+                "Target Jackpot (High)": int(target_jp),
+                "Target Moon (Breakout)": int(target_moon), # Kolom Baru
                 "Potensi Aman (%)": round(potensi_aman, 2),
                 "Potensi MAX (%)": round(potensi_max, 2),
+                "Potensi Moon (%)": round(potensi_moon, 2), # Kolom Baru
                 "Tipe Akumulasi": tipe,
                 "Alasan Rekomendasi": alasan_text,
                 "Acc Score": acc_score,
-                "Last Update": waktu_update  # <--- KOLOM BARU
+                "Last Update": waktu_update
             })
 
         except Exception as e:
@@ -221,20 +241,20 @@ def analyze_sector(sector_name, ticker_list):
 
     df_result = pd.DataFrame(results)
 
-    # Urutkan kolom sesuai permintaan user
+    # Urutkan kolom (Update dengan kolom Moon)
     desired_order = [
         "Ticker", "Harga Skrg", "Base Condition", "Vol MA 50", "is_volume_shift", 
         "volatility_contracting", "spring", "RSI", "obv_trend", "Risk/Reward", 
-        "Action", "Stop Loss", "Target Aman", "Est. Waktu Aman", "Target Jackpot", 
-        "Est. Waktu JP", "Potensi Aman (%)", "Potensi MAX (%)", 
-        "Tipe Akumulasi", "Alasan Rekomendasi", "Acc Score", "Last Update" # <--- KOLOM BARU
+        "Action", "Stop Loss", 
+        "Target Aman (Fib 0.618)", "Target Jackpot (High)", "Target Moon (Breakout)", # Updated
+        "Potensi Aman (%)", "Potensi MAX (%)", "Potensi Moon (%)", # Updated
+        "Tipe Akumulasi", "Alasan Rekomendasi", "Acc Score", "Last Update"
     ]
     
-    # Pastikan hanya mengurutkan jika DataFrame tidak kosong
     if not df_result.empty:
-        # Reorder columns
-        df_result = df_result[desired_order]
-        # Sort rows by Score
+        # Filter hanya kolom yang tersedia (jaga-jaga)
+        available_cols = [c for c in desired_order if c in df_result.columns]
+        df_result = df_result[available_cols]
         df_result = df_result.sort_values(by="Acc Score", ascending=False)
 
     return df_result
