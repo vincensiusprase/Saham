@@ -345,8 +345,8 @@ def analyze_sector(sector_name, ticker_list):
     df_result = pd.DataFrame(results)
 
     desired_order = [
-        "Ticker", "Harga Skrg", "Trend Status", "Action", "Score", "Narasi Berita", 
-        "Level Target", "Risk/Reward", "Target Aman", "Target Moon", 
+        "Ticker", "Trend Status", "Action", "Score", "Narasi Berita", 
+        "Level Target", "Risk/Reward", "Harga Skrg", "Target Aman", "Target Moon", 
         "Potensi Aman (%)", "Potensi Moon (%)", "Stop Loss", "Alasan", "Last Update"
     ]
     
