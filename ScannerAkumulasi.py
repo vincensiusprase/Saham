@@ -166,10 +166,20 @@ def analyze_sector(sector_name, ticker_list):
                 tipe = "Early Base"
 
             # Action Label
-            if acc_score >= 7.5 and rr >= 2:
+            # Prioritas 1: Setup Sempurna (Skor Tinggi + RR Bagus)
+            if acc_score >= 7 and rr >= 2:
                 action = "💎 STRONG ACCUMULATION"
-            elif acc_score >= 6:
+            
+            # Prioritas 2: Setup Spesifik (Spring Wyckoff)
+            # Spring adalah sinyal kuat, jadi meskipun skor total belum 70, tetap layak dipantau
+            elif spring and acc_score >= 5:
+                action = "⚡ SPRING POTENTIAL"
+
+            # Prioritas 3: Akumulasi Awal (Skor Lumayan)
+            elif acc_score >= 5:
                 action = "🟢 EARLY ACCUMULATION"
+            
+            # Sisanya
             else:
                 action = "⚪ WATCHLIST"
 
@@ -270,7 +280,7 @@ SECTOR_CONFIG = {
     "VINS.JK", "BCIC.JK", "BINA.JK", "WOMF.JK", "LPGI.JK", "LIFE.JK", "VTNY.JK", "VICO.JK", "STAR.JK", "YOII.JK", "FUJI.JK", "MTWI.JK",
     "POLA.JK", "BBSI.JK", "ASJT.JK", "SDRA.JK", "BMAS.JK", "AMAG.JK", "ASMI.JK", "HDFA.JK", "VRNA.JK", "AMOR.JK", "APIC.JK", "MREI.JK",
     "ASDM.JK", "TIFA.JK", "BHIT.JK", "ASRM.JK", "RELI.JK", "NICK.JK", "TRUS.JK", "ASBI.JK", "DEFI.JK", "BBLD.JK", "BBMD.JK", "MASB.JK",
-    "BPFI.JK", "YULE.JK", "BPII.JK", "POOL.JK", "BSWD.JK", "SFAN.JK", "ABDA.JK", "OCAP.JK", "PLAS.JK"
+    "BPFI.JK", "YULE.JK", "BPII.JK", "POOL.JK", "BSWD.JK", "SFAN.JK", "ABDA.JK", "OCAP.JK", "PLAS.JK","SUPA.JK"
     ],
     "IDXCYCLIC": [
     "MNCN.JK", "SCMA.JK", "LPPF.JK", "MINA.JK", "BUVA.JK", "ACES.JK", "ERAA.JK", "HRTA.JK", "FUTR.JK", "MAPI.JK", "AUTO.JK", "GJTL.JK",
