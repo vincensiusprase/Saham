@@ -68,7 +68,7 @@ def analyze_sector(sector_name, ticker_list):
 
     for ticker in ticker_list:
         try:
-        df = yf.download(
+            df = yf.download(
                 ticker,
                 period="1y",
                 progress=False,
@@ -76,10 +76,15 @@ def analyze_sector(sector_name, ticker_list):
                 threads=False)
 
             # 🔥 FIX MultiIndex column
-        if isinstance(df.columns, pd.MultiIndex):
+            if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
 
-            price = float(df["Close"].iloc[-1])
+            price = df["Close"].iloc[-1]
+
+            if isinstance(price, pd.Series):
+            price = price.values[0]
+
+            price = float(price)
 
             # ==============================
             # BASE CONDITION
