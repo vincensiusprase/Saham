@@ -1,5 +1,5 @@
 # ==========================================
-# MARKET SCANNER ACCUM (MINERVINI TREND + WYCKOFF)
+# MARKET SCANNER ACCUM (MINERVINI + FIBO LADDER + WYCKOFF)
 # ==========================================
 
 import yfinance as yf
@@ -69,7 +69,7 @@ def analyze_sector(sector_name, ticker_list):
         try:
             df = yf.download(
                 ticker,
-                period="2y",  # Butuh data lebih panjang untuk MA 200
+                period="2y",
                 progress=False,
                 auto_adjust=True,
                 threads=False)
@@ -77,60 +77,42 @@ def analyze_sector(sector_name, ticker_list):
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
 
-            if df.empty or len(df) < 200: # Skip jika data kurang dari 200 hari
+            if df.empty or len(df) < 200:
                 continue
 
             price = float(df["Close"].iloc[-1])
 
             # ==============================
-            # 1. MINERVINI TREND TEMPLATE (THE FILTER)
+            # 1. MINERVINI TREND TEMPLATE
             # ==============================
-            # Ini adalah filter 'Mahal' tapi 'Aman'. 
-            # Kita hanya mau saham yang sehat secara trend.
-            
             ma_50 = df["Close"].rolling(50).mean().iloc[-1]
             ma_150 = df["Close"].rolling(150).mean().iloc[-1]
             ma_200 = df["Close"].rolling(200).mean().iloc[-1]
             
-            # Trend Conditions (Minervini Rules)
-            # 1. Harga di atas MA 150 dan MA 200
             c1 = price > ma_150 and price > ma_200
-            # 2. MA 150 di atas MA 200
             c2 = ma_150 > ma_200
-            # 3. MA 200 harus menanjak (trending up) setidaknya 1 bulan terakhir
-            ma_200_prev = df["Close"].rolling(200).mean().iloc[-22] # 22 hari kerja lalu
+            ma_200_prev = df["Close"].rolling(200).mean().iloc[-22]
             c3 = ma_200 > ma_200_prev
-            # 4. Harga di atas MA 50 (Trend Jangka Menengah Kuat)
             c4 = price > ma_50
             
-            # Tentukan Kualitas Trend
             is_super_uptrend = c1 and c2 and c3 and c4
-            is_moderate_uptrend = c1 and c3 # Minimal di atas MA200 dan MA200 naik
+            is_moderate_uptrend = c1 and c3
 
             # ==============================
-            # 2. WYCKOFF ACCUMULATION (THE ENTRY)
+            # 2. WYCKOFF & PATTERNS
             # ==============================
-            # Setelah trend naik, kita cari yang sedang istirahat (sideways/pullback)
-            
-            # Base Condition (Sideways jangka pendek 3-6 bulan)
-            # Kita pakai High/Low 60 hari saja untuk swing (lebih responsif)
             high_60 = df["High"].rolling(60).max().iloc[-1]
             low_60 = df["Low"].rolling(60).min().iloc[-1]
             range_span = high_60 - low_60
             range_pct = range_span / price
             
-            # Konsolidasi: Fluktuasi tidak terlalu liar (< 40%)
             is_consolidating = range_pct < 0.40
 
-            # Volatility Contraction (VCP)
-            # ATR mengecil dibanding bulan lalu
             atr = ta.volatility.AverageTrueRange(df["High"], df["Low"], df["Close"], window=14).average_true_range()
             atr_now = atr.iloc[-1]
             atr_prev = atr.iloc[-25]
             is_vcp = atr_now < atr_prev
 
-            # Spring / False Break di Support MA 50
-            # Harga sempat jebol MA 50 tapi closing balik di atasnya
             low_5 = df["Low"].iloc[-5:].min()
             is_spring_ma50 = (low_5 < ma_50) and (price > ma_50)
 
@@ -138,61 +120,93 @@ def analyze_sector(sector_name, ticker_list):
             # 3. VOLUME & MOMENTUM
             # ==============================
             vol_ma50 = df["Volume"].rolling(50).mean().iloc[-1]
-            vol_now = df["Volume"].iloc[-1] # Volume hari ini
-            is_vol_spike = vol_now > (vol_ma50 * 1.5) # Volume meledak 1.5x rata-rata
-            
+            vol_now = df["Volume"].iloc[-1]
+            is_vol_spike = vol_now > (vol_ma50 * 1.5)
             rsi = ta.momentum.RSIIndicator(df["Close"]).rsi().iloc[-1]
 
             # ==============================
-            # 4. TARGET & RISK (FIBONACCI)
+            # 4. TARGET & RISK (FIBONACCI LADDER SYSTEM)
             # ==============================
-            stop_loss = low_60 - atr_now
-            target_aman = low_60 + (range_span * 0.618) # Fib 0.618
-            target_moon = high_60 + (range_span * 0.272) # Breakout
             
+            # Stop Loss Dinamis
+            if price > (low_60 + range_span * 0.5): 
+                stop_loss = ma_50 # Trailing stop pakai MA50 jika harga sudah tinggi
+            else:
+                stop_loss = low_60 - atr_now # Standard stop loss
+
+            # --- LOGIKA BARU: FIBONACCI LADDER ---
+            # Kita definisikan semua level fibonacci yang relevan
+            fib_levels = [0.236, 0.382, 0.5, 0.618, 0.786, 1.0, 1.272, 1.618]
+            
+            target_aman = 0
+            target_moon = 0
+            fib_note = ""
+
+            # Cari level terdekat di atas harga sekarang
+            current_fib_level = (price - low_60) / range_span if range_span > 0 else 0
+            
+            found_target = False
+            for level in fib_levels:
+                calc_price = low_60 + (range_span * level)
+                # Beri buffer 2% agar tidak langsung target jika harga mepet banget
+                if calc_price > price * 1.02: 
+                    target_aman = calc_price
+                    fib_note = f"Fib {level}"
+                    
+                    # Target Moon adalah 2 level di atas target aman (atau minimal next level)
+                    try:
+                        next_idx = fib_levels.index(level) + 1
+                        if next_idx < len(fib_levels):
+                             target_moon = low_60 + (range_span * fib_levels[next_idx])
+                        else:
+                             target_moon = low_60 + (range_span * 2.0) # Sky high
+                    except:
+                        target_moon = target_aman * 1.1
+                    
+                    found_target = True
+                    break
+            
+            # Fallback jika harga sudah ATH (All Time High / di atas 1.618)
+            if not found_target:
+                target_aman = price * 1.05 # 5% dari harga skrg
+                target_moon = price * 1.15 # 15% dari harga skrg
+                fib_note = "Blue Sky Breakout"
+
             risk = price - stop_loss
             reward = target_aman - price
-            if risk <= 0: risk = 0.1 # Hindari div by zero
+            
+            if risk <= 0: risk = 0.1
             rr = reward / risk
 
             potensi_aman = ((target_aman - price) / price) * 100
             potensi_moon = ((target_moon - price) / price) * 100
 
             # ==============================
-            # SCORING & ACTION
+            # SCORING
             # ==============================
             score = 0
-            
-            # Poin Trend (Paling Penting!)
             if is_super_uptrend: score += 40
             elif is_moderate_uptrend: score += 20
-            else: score -= 20 # Hukuman berat untuk downtrend
+            else: score -= 20
 
-            # Poin Pola
             if is_consolidating: score += 15
             if is_vcp: score += 15
             if is_spring_ma50: score += 15
-            
-            # Poin Momentum
             if is_vol_spike: score += 10
-            if 40 < rsi < 70: score += 5 # RSI tidak overbought
+            if 40 < rsi < 70: score += 5
             
-            # Classification
-            trend_desc = "Unknown"
-            if is_super_uptrend: trend_desc = "🚀 SUPER UPTREND"
-            elif is_moderate_uptrend: trend_desc = "📈 Uptrend Normal"
-            else: trend_desc = "⚠️ Downtrend/Sideways"
+            trend_desc = "🚀 SUPER UPTREND" if is_super_uptrend else ("📈 Uptrend" if is_moderate_uptrend else "⚠️ Sideways/Down")
 
             action = "⚪ WATCHLIST"
-            if score >= 85 and rr >= 2: action = "💎 STRONG BUY (VCP)"
-            elif score >= 70: action = "🟢 BUY ON WEAKNESS"
-            
-            # Alasan
+            if score >= 85 and rr >= 2: action = "💎 STRONG BUY"
+            elif score >= 70 and rr >= 1.5: action = "🟢 BUY"
+
             reasons = []
             if is_super_uptrend: reasons.append("Strong Trend")
             if is_vcp: reasons.append("VCP")
             if is_spring_ma50: reasons.append("Pantul MA50")
-            if is_vol_spike: reasons.append("Big Volume")
+            if is_vol_spike: reasons.append("Vol Spike")
+            if "Breakout" in fib_note: reasons.append("Breakout")
             
             alasan_text = ", ".join(reasons) if reasons else "-"
 
@@ -204,6 +218,7 @@ def analyze_sector(sector_name, ticker_list):
                 "Score": score,
                 "Risk/Reward": round(rr, 2),
                 "Target Aman": int(target_aman),
+                "Level Target": fib_note, # Kolom Baru: Info level fib berapa
                 "Target Moon": int(target_moon),
                 "Potensi Aman (%)": round(potensi_aman, 2),
                 "Potensi Moon (%)": round(potensi_moon, 2),
@@ -213,13 +228,12 @@ def analyze_sector(sector_name, ticker_list):
             })
 
         except Exception as e:
-            # print(f"Error {ticker}: {e}") # Silent error biar rapi
             pass
 
     df_result = pd.DataFrame(results)
 
     desired_order = [
-        "Ticker", "Harga Skrg", "Trend Status", "Action", "Score", "Risk/Reward", 
+        "Ticker", "Harga Skrg", "Trend Status", "Level Target", "Action", "Score", "Risk/Reward", 
         "Target Aman", "Target Moon", "Potensi Aman (%)", "Potensi Moon (%)", 
         "Stop Loss", "Alasan", "Last Update"
     ]
@@ -339,7 +353,7 @@ SECTOR_CONFIG = {
 # ==========================================
 if __name__ == "__main__":
 
-    print("🤖 START MARKET SCANNER PRO (MINERVINI MODE) 🤖")
+    print("🤖 START MARKET SCANNER PRO (MINERVINI + FIBO LADDER) 🤖")
 
     for sheet_name, saham_list in SECTOR_CONFIG.items():
 
