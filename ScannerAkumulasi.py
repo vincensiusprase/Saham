@@ -1,5 +1,5 @@
 # ==========================================
-# MARKET SCANNER ACCUMULATIOn
+# MARKET SCANNER ACCUM (MINERVINI TREND + WYCKOFF)
 # ==========================================
 
 import yfinance as yf
@@ -69,193 +69,165 @@ def analyze_sector(sector_name, ticker_list):
         try:
             df = yf.download(
                 ticker,
-                period="1y",
+                period="2y",  # Butuh data lebih panjang untuk MA 200
                 progress=False,
                 auto_adjust=True,
                 threads=False)
 
-            # 🔥 FIX MultiIndex column
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
 
-            if df.empty:
+            if df.empty or len(df) < 200: # Skip jika data kurang dari 200 hari
                 continue
 
-            price = df["Close"].iloc[-1]
-            if isinstance(price, pd.Series):
-                price = price.values[0]
-            price = float(price)
+            price = float(df["Close"].iloc[-1])
 
             # ==============================
-            # INDICATOR CALCULATIONS
+            # 1. MINERVINI TREND TEMPLATE (THE FILTER)
             # ==============================
+            # Ini adalah filter 'Mahal' tapi 'Aman'. 
+            # Kita hanya mau saham yang sehat secara trend.
             
-            # 1. Base Condition (Sideways)
-            high_120 = df["High"].rolling(120).max().iloc[-1]
-            low_120 = df["Low"].rolling(120).min().iloc[-1]
-            range_span = high_120 - low_120
+            ma_50 = df["Close"].rolling(50).mean().iloc[-1]
+            ma_150 = df["Close"].rolling(150).mean().iloc[-1]
+            ma_200 = df["Close"].rolling(200).mean().iloc[-1]
             
-            # Cek range harga (%)
+            # Trend Conditions (Minervini Rules)
+            # 1. Harga di atas MA 150 dan MA 200
+            c1 = price > ma_150 and price > ma_200
+            # 2. MA 150 di atas MA 200
+            c2 = ma_150 > ma_200
+            # 3. MA 200 harus menanjak (trending up) setidaknya 1 bulan terakhir
+            ma_200_prev = df["Close"].rolling(200).mean().iloc[-22] # 22 hari kerja lalu
+            c3 = ma_200 > ma_200_prev
+            # 4. Harga di atas MA 50 (Trend Jangka Menengah Kuat)
+            c4 = price > ma_50
+            
+            # Tentukan Kualitas Trend
+            is_super_uptrend = c1 and c2 and c3 and c4
+            is_moderate_uptrend = c1 and c3 # Minimal di atas MA200 dan MA200 naik
+
+            # ==============================
+            # 2. WYCKOFF ACCUMULATION (THE ENTRY)
+            # ==============================
+            # Setelah trend naik, kita cari yang sedang istirahat (sideways/pullback)
+            
+            # Base Condition (Sideways jangka pendek 3-6 bulan)
+            # Kita pakai High/Low 60 hari saja untuk swing (lebih responsif)
+            high_60 = df["High"].rolling(60).max().iloc[-1]
+            low_60 = df["Low"].rolling(60).min().iloc[-1]
+            range_span = high_60 - low_60
             range_pct = range_span / price
-            base_condition = range_pct < 0.40  # Sedikit diperlonggar jadi 40%
+            
+            # Konsolidasi: Fluktuasi tidak terlalu liar (< 40%)
+            is_consolidating = range_pct < 0.40
 
-            # 2. Volume Logic
+            # Volatility Contraction (VCP)
+            # ATR mengecil dibanding bulan lalu
+            atr = ta.volatility.AverageTrueRange(df["High"], df["Low"], df["Close"], window=14).average_true_range()
+            atr_now = atr.iloc[-1]
+            atr_prev = atr.iloc[-25]
+            is_vcp = atr_now < atr_prev
+
+            # Spring / False Break di Support MA 50
+            # Harga sempat jebol MA 50 tapi closing balik di atasnya
+            low_5 = df["Low"].iloc[-5:].min()
+            is_spring_ma50 = (low_5 < ma_50) and (price > ma_50)
+
+            # ==============================
+            # 3. VOLUME & MOMENTUM
+            # ==============================
             vol_ma50 = df["Volume"].rolling(50).mean().iloc[-1]
-            vol_10 = df["Volume"].iloc[-10:].mean()
-            is_volume_shift = vol_10 > vol_ma50
-
-            # 3. Volatility / ATR
-            high_low = df["High"] - df["Low"]
-            high_close = np.abs(df["High"] - df["Close"].shift())
-            low_close = np.abs(df["Low"] - df["Close"].shift())
-            ranges = pd.concat([high_low, high_close, low_close], axis=1)
-            true_range = ranges.max(axis=1)
+            vol_now = df["Volume"].iloc[-1] # Volume hari ini
+            is_vol_spike = vol_now > (vol_ma50 * 1.5) # Volume meledak 1.5x rata-rata
             
-            atr_now = true_range.rolling(14).mean().iloc[-1]
-            atr_prev = true_range.rolling(14).mean().iloc[-30]
-            volatility_contracting = atr_now < atr_prev
-
-            # 4. Spring Logic
-            support = low_120
-            recent_low = df["Low"].iloc[-5:].min()
-            spring = recent_low < support * 0.98 and price > support
-
-            # 5. RSI & OBV
-            delta = df["Close"].diff()
-            gain = delta.clip(lower=0)
-            loss = -delta.clip(upper=0)
-            avg_gain = gain.rolling(14).mean()
-            avg_loss = loss.rolling(14).mean()
-            rs = avg_gain / avg_loss
-            rsi = float((100 - (100 / (1 + rs))).iloc[-1])
-
-            obv = (np.sign(df["Close"].diff()) * df["Volume"]).fillna(0).cumsum()
-            obv_trend = obv.iloc[-1] > obv.iloc[-20]
+            rsi = ta.momentum.RSIIndicator(df["Close"]).rsi().iloc[-1]
 
             # ==============================
-            # TARGET & RISK (FIBONACCI LOGIC)
+            # 4. TARGET & RISK (FIBONACCI)
             # ==============================
+            stop_loss = low_60 - atr_now
+            target_aman = low_60 + (range_span * 0.618) # Fib 0.618
+            target_moon = high_60 + (range_span * 0.272) # Breakout
             
-            # Stop Loss: Low - ATR (Buffer volatilitas)
-            stop_loss = low_120 - atr_now
-
-            # Target Aman: Fibonacci Retracement 0.618 (Golden Ratio) dari Range
-            # Ini adalah resisten terkuat sebelum pucuk
-            target_aman = low_120 + (range_span * 0.618)
-            
-            # Target Jackpot: High 120 (Atap Kotak)
-            target_jp = high_120
-
-            # Target Moon: Fibonacci Extension 1.272 (Jika Breakout)
-            # Logika: Jika akumulasi sukses, harga akan terbang melewati atap
-            target_moon = high_120 + (range_span * 0.272) 
-
-            # Jika harga sudah melewati Target Aman, sesuaikan
-            if price > target_aman:
-                target_aman = target_jp # Geser target aman ke JP
-                target_jp = target_moon # Geser target JP ke Moon
-
             risk = price - stop_loss
             reward = target_aman - price
-
-            # Filter Safety
-            if risk <= 0: continue
-            
+            if risk <= 0: risk = 0.1 # Hindari div by zero
             rr = reward / risk
 
             potensi_aman = ((target_aman - price) / price) * 100
-            potensi_max = ((target_jp - price) / price) * 100
             potensi_moon = ((target_moon - price) / price) * 100
 
             # ==============================
-            # SCORING & CLASSIFICATION
+            # SCORING & ACTION
             # ==============================
-            acc_score = 0
-            if base_condition: acc_score += 2
-            if is_volume_shift: acc_score += 2
-            if volatility_contracting: acc_score += 1.5
-            if spring: acc_score += 2
-            if obv_trend: acc_score += 1.5
-            if 40 < rsi < 60: acc_score += 1
+            score = 0
             
-            # Bonus Score jika RR Ratio Sangat Bagus (> 3)
-            if rr >= 3: acc_score += 1
+            # Poin Trend (Paling Penting!)
+            if is_super_uptrend: score += 40
+            elif is_moderate_uptrend: score += 20
+            else: score -= 20 # Hukuman berat untuk downtrend
 
-            # Tipe Akumulasi
-            if spring:
-                tipe = "Spring Wyckoff"
-            elif base_condition and is_volume_shift:
-                tipe = "Base Accumulation"
-            else:
-                tipe = "Early Base"
+            # Poin Pola
+            if is_consolidating: score += 15
+            if is_vcp: score += 15
+            if is_spring_ma50: score += 15
+            
+            # Poin Momentum
+            if is_vol_spike: score += 10
+            if 40 < rsi < 70: score += 5 # RSI tidak overbought
+            
+            # Classification
+            trend_desc = "Unknown"
+            if is_super_uptrend: trend_desc = "🚀 SUPER UPTREND"
+            elif is_moderate_uptrend: trend_desc = "📈 Uptrend Normal"
+            else: trend_desc = "⚠️ Downtrend/Sideways"
 
-            # Action Label
-            if acc_score >= 7 and rr >= 2:
-                action = "💎 STRONG ACCUMULATION"
-            elif spring and acc_score >= 5:
-                action = "⚡ SPRING POTENTIAL"
-            elif acc_score >= 5:
-                action = "🟢 EARLY ACCUMULATION"
-            else:
-                action = "⚪ WATCHLIST"
-
-            # Alasan Rekomendasi
+            action = "⚪ WATCHLIST"
+            if score >= 85 and rr >= 2: action = "💎 STRONG BUY (VCP)"
+            elif score >= 70: action = "🟢 BUY ON WEAKNESS"
+            
+            # Alasan
             reasons = []
-            if base_condition: reasons.append("Konsolidasi")
-            if is_volume_shift: reasons.append("Vol Spike")
-            if spring: reasons.append("Spring Signal")
-            if obv_trend: reasons.append("OBV Naik")
+            if is_super_uptrend: reasons.append("Strong Trend")
+            if is_vcp: reasons.append("VCP")
+            if is_spring_ma50: reasons.append("Pantul MA50")
+            if is_vol_spike: reasons.append("Big Volume")
             
-            alasan_text = ", ".join(reasons) if reasons else "Normal Market"
+            alasan_text = ", ".join(reasons) if reasons else "-"
 
-            # ==============================
-            # FINAL DATA STRUCTURING
-            # ==============================
             results.append({
                 "Ticker": ticker,
                 "Harga Skrg": int(price),
-                "Base Condition": base_condition,
-                "Vol MA 50": int(vol_ma50),
-                "is_volume_shift": is_volume_shift,
-                "volatility_contracting": volatility_contracting,
-                "spring": spring,
-                "RSI": round(rsi, 2),
-                "obv_trend": obv_trend,
-                "Risk/Reward": round(rr, 2),
+                "Trend Status": trend_desc,
                 "Action": action,
-                "Stop Loss": int(stop_loss),
-                "Target Aman (Fib 0.618)": int(target_aman),
-                "Target Jackpot (High)": int(target_jp),
-                "Target Moon (Breakout)": int(target_moon), # Kolom Baru
+                "Score": score,
+                "Risk/Reward": round(rr, 2),
+                "Target Aman": int(target_aman),
+                "Target Moon": int(target_moon),
                 "Potensi Aman (%)": round(potensi_aman, 2),
-                "Potensi MAX (%)": round(potensi_max, 2),
-                "Potensi Moon (%)": round(potensi_moon, 2), # Kolom Baru
-                "Tipe Akumulasi": tipe,
-                "Alasan Rekomendasi": alasan_text,
-                "Acc Score": acc_score,
+                "Potensi Moon (%)": round(potensi_moon, 2),
+                "Stop Loss": int(stop_loss),
+                "Alasan": alasan_text,
                 "Last Update": waktu_update
             })
 
         except Exception as e:
-            print(f"Error {ticker}: {e}")
+            # print(f"Error {ticker}: {e}") # Silent error biar rapi
+            pass
 
     df_result = pd.DataFrame(results)
 
-    # Urutkan kolom (Update dengan kolom Moon)
     desired_order = [
-        "Ticker", "Harga Skrg", "Base Condition", "Vol MA 50", "is_volume_shift", 
-        "volatility_contracting", "spring", "RSI", "obv_trend", "Risk/Reward", 
-        "Action", "Stop Loss", 
-        "Target Aman (Fib 0.618)", "Target Jackpot (High)", "Target Moon (Breakout)", # Updated
-        "Potensi Aman (%)", "Potensi MAX (%)", "Potensi Moon (%)", # Updated
-        "Tipe Akumulasi", "Alasan Rekomendasi", "Acc Score", "Last Update"
+        "Ticker", "Harga Skrg", "Trend Status", "Action", "Score", "Risk/Reward", 
+        "Target Aman", "Target Moon", "Potensi Aman (%)", "Potensi Moon (%)", 
+        "Stop Loss", "Alasan", "Last Update"
     ]
     
     if not df_result.empty:
-        # Filter hanya kolom yang tersedia (jaga-jaga)
         available_cols = [c for c in desired_order if c in df_result.columns]
         df_result = df_result[available_cols]
-        df_result = df_result.sort_values(by="Acc Score", ascending=False)
+        df_result = df_result.sort_values(by="Score", ascending=False)
 
     return df_result
 
@@ -367,7 +339,7 @@ SECTOR_CONFIG = {
 # ==========================================
 if __name__ == "__main__":
 
-    print("🤖 START MARKET SCANNER PRO 🤖")
+    print("🤖 START MARKET SCANNER PRO (MINERVINI MODE) 🤖")
 
     for sheet_name, saham_list in SECTOR_CONFIG.items():
 
