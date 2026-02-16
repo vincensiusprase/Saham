@@ -7,3 +7,6 @@ tqdm
 pytz
 google-auth
 ta
+GoogleNews
+requests
+beautifulsoup4
