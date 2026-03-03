@@ -52,9 +52,8 @@ def connect_gsheet(target_sheet_name):
         print(f"❌ Error Koneksi GSheet: {e}")
         return None
 
-
 # ==========================================
-# ANALYZE SINGLE STOCK
+# ANALYZE SINGLE STOCK (VERSI LIBRARY 'ta')
 # ==========================================
 def analyze_stock(ticker):
     try:
@@ -64,41 +63,66 @@ def analyze_stock(ticker):
         df.dropna(inplace=True)
         if len(df) < 60: return None
 
+        # --- KALKULASI INDIKATOR MENGGUNAKAN LIBRARY 'ta' ---
+        
+        # 1. Moving Averages
         ma_periods = [10, 20, 50, 100, 200]
         for p in ma_periods:
-            df[f'SMA_{p}'] = ta.sma(df['Close'], length=p)
-            df[f'EMA_{p}'] = ta.ema(df['Close'], length=p)
+            df[f'SMA_{p}'] = ta.trend.sma_indicator(df['Close'], window=p)
+            df[f'EMA_{p}'] = ta.trend.ema_indicator(df['Close'], window=p)
 
-        ichi, _ = ta.ichimoku(df['High'], df['Low'], df['Close'])
-        df['ISA'], df['ISB'] = ichi['ISA_9'], ichi['ISB_26']
-        df['ITS'], df['IKS'] = ichi['ITS_9'], ichi['IKS_26']
+        # 2. Ichimoku Cloud
+        ichi = ta.trend.IchimokuIndicator(high=df['High'], low=df['Low'], window1=9, window2=26, window3=52)
+        df['ISA'] = ichi.ichimoku_a()
+        df['ISB'] = ichi.ichimoku_b()
+        df['ITS'] = ichi.ichimoku_conversion_line()
+        df['IKS'] = ichi.ichimoku_base_line()
 
-        df['RSI'] = ta.rsi(df['Close'], length=14)
+        # 3. RSI
+        df['RSI'] = ta.momentum.rsi(df['Close'], window=14)
         
-        stoch = ta.stoch(df['High'], df['Low'], df['Close'])
-        df['STOCH_K'], df['STOCH_D'] = stoch['STOCHk_14_3_3'], stoch['STOCHd_14_3_3']
+        # 4. Stochastic
+        stoch = ta.momentum.StochasticOscillator(high=df['High'], low=df['Low'], close=df['Close'], window=14, smooth_window=3)
+        df['STOCH_K'] = stoch.stoch()
+        df['STOCH_D'] = stoch.stoch_signal()
 
-        df['CCI'] = ta.cci(df['High'], df['Low'], df['Close'], length=20)
+        # 5. CCI
+        df['CCI'] = ta.trend.cci(high=df['High'], low=df['Low'], close=df['Close'], window=20)
         
-        adx = ta.adx(df['High'], df['Low'], df['Close'], length=14)
-        df['ADX'], df['+DI'], df['-DI'] = adx['ADX_14'], adx['DMP_14'], adx['DMN_14']
+        # 6. ADX (+DI, -DI)
+        adx_ind = ta.trend.ADXIndicator(high=df['High'], low=df['Low'], close=df['Close'], window=14)
+        df['ADX'] = adx_ind.adx()
+        df['+DI'] = adx_ind.adx_pos()
+        df['-DI'] = adx_ind.adx_neg()
 
-        df['AO'] = ta.ao(df['High'], df['Low'])
-        df['MOM'] = ta.mom(df['Close'], length=10)
+        # 7. Awesome Oscillator
+        df['AO'] = ta.momentum.awesome_oscillator(high=df['High'], low=df['Low'], window1=5, window2=34)
+        
+        # 8. Momentum (TradingView menggunakan Close hari ini dikurangi Close 10 hari lalu)
+        df['MOM'] = df['Close'].diff(10)
 
-        macd = ta.macd(df['Close'])
-        df['MACD'], df['MACD_SIGNAL'] = macd['MACD_12_26_9'], macd['MACDs_12_26_9']
+        # 9. MACD
+        macd_ind = ta.trend.MACD(close=df['Close'], window_slow=26, window_fast=12, window_sign=9)
+        df['MACD'] = macd_ind.macd()
+        df['MACD_SIGNAL'] = macd_ind.macd_signal()
 
-        stochrsi = ta.stochrsi(df['Close'])
-        df['SRSI_K'], df['SRSI_D'] = stochrsi['STOCHRSIk_14_14_3_3'], stochrsi['STOCHRSId_14_14_3_3']
+        # 10. Stochastic RSI (Library 'ta' menghasilkan skala 0-1, kita kali 100 agar cocok dengan skor TV)
+        stochrsi_ind = ta.momentum.StochRSIIndicator(close=df['Close'], window=14, smooth1=3, smooth2=3)
+        df['SRSI_K'] = stochrsi_ind.stochrsi_k() * 100
+        df['SRSI_D'] = stochrsi_ind.stochrsi_d() * 100
 
-        df['WILLR'] = ta.willr(df['High'], df['Low'], df['Close'], length=14)
+        # 11. Williams %R
+        df['WILLR'] = ta.momentum.williams_r(high=df['High'], low=df['Low'], close=df['Close'], lbp=14)
 
-        df['EMA_13'] = ta.ema(df['Close'], length=13)
-        eri = ta.eri(df['High'], df['Low'], df['Close'], length=13)
-        df['BULLP'], df['BEARP'] = eri['BULLP_13'], eri['BEARP_13']
+        # 12. Bull & Bear Power (Elder Ray) - Dihitung manual menggunakan EMA 13
+        df['EMA_13'] = ta.trend.ema_indicator(df['Close'], window=13)
+        df['BULLP'] = df['High'] - df['EMA_13']
+        df['BEARP'] = df['Low'] - df['EMA_13']
 
-        df['UO'] = ta.uo(df['High'], df['Low'], df['Close'])
+        # 13. Ultimate Oscillator
+        df['UO'] = ta.momentum.ultimate_oscillator(high=df['High'], low=df['Low'], close=df['Close'], window1=7, window2=14, window3=28)
+        
+        # Volume MA
         df['VOL_SMA_20'] = df['Volume'].rolling(window=20).mean()
 
         day1, day2, day3 = df.iloc[-3], df.iloc[-2], df.iloc[-1]
@@ -234,7 +258,6 @@ def analyze_stock(ticker):
     except Exception as e:
         print(f"Error pada {ticker}: {e}")
         return None
-
 # ==========================================
 # ANALYZE SECTOR (FUNGSI BARU YANG DITAMBAHKAN)
 # ==========================================
