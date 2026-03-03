@@ -25,5 +25,5 @@ jobs:
 
       - name: Run Script
         env:
-         GCP_CREDENTIALS: ${{ secrets.GCP_CREDENTIALS }}
+         GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
         run: python ScannerPattern.py
