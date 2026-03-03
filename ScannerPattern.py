@@ -237,13 +237,39 @@ def analyze_stock(ticker):
         is_hammer = (low_shad3 >= (2 * max(body_day3, 0.0001))) and (up_shad3 <= (0.5 * max(body_day3, 0.0001)))
         is_shooting_star = (up_shad3 >= (2 * max(body_day3, 0.0001))) and (low_shad3 <= (0.5 * max(body_day3, 0.0001)))
 
+        mid_2 = day2['Open'] + (body_day2/2) if bull_2 else day2['Close'] + (body_day2/2)
+        is_dark_cloud = bull_2 and bear_3 and (day3['Open'] > day2['Close']) and (day3['Close'] <= mid_2) and (day3['Close'] >= day2['Open'])
+
+        is_bull_harami = bear_2 and bull_3 and (day3['Open'] >= day2['Close']) and (day3['Close'] <= day2['Open']) and (body_day3 <= (0.5 * body_day2))
+
+        is_bear_harami = bull_2 and bear_3 and (day3['Open'] <= day2['Close']) and (day3['Close'] >= day2['Open']) and (body_day3 <= (0.5 * body_day2))
+
+        def close_near_low(row):
+            length = row['High'] - row['Low']
+            return (min(row['Open'], row['Close']) - row['Low']) <= (0.2 * length) if length > 0 else True
+
+        is_3_black_crows = (bear_1 and bear_2 and bear_3 and 
+                            (day2['Close'] < day1['Close']) and (day3['Close'] < day2['Close']) and 
+                            (day2['Open'] < day1['Open']) and (day2['Open'] >= day1['Close']) and 
+                            (day3['Open'] < day2['Open']) and (day3['Open'] >= day2['Close']) and 
+                            close_near_low(day1) and close_near_low(day2) and close_near_low(day3))
+                
         pola = "-"
+        # Pola 3 Candle
         if is_3_white_soldiers: pola = "Bullish: 3 White Soldiers"
+        elif is_3_black_crows: pola = "Bearish: 3 Black Crows"
         elif is_evening_star: pola = "Bearish: Evening Star"
         elif is_morning_star: pola = "Bullish: Morning Star"
+        
+        # Pola 2 Candle
         elif is_bear_engulfing: pola = "Bearish: Engulfing"
         elif is_bull_engulfing: pola = "Bullish: Engulfing"
+        elif is_dark_cloud: pola = "Bearish: Dark Cloud Cover"
         elif is_piercing: pola = "Bullish: Piercing Line"
+        elif is_bear_harami: pola = "Bearish: Harami"
+        elif is_bull_harami: pola = "Bullish: Harami"
+        
+        # Pola 1 Candle
         elif is_shooting_star: pola = "Bearish: Shooting Star"
         elif is_hammer: pola = "Bullish: Hammer"
 
