@@ -338,13 +338,134 @@ def analyze_stock(ticker):
                             (day2['Open'] < day1['Open']) and (day2['Open'] >= day1['Close']) and 
                             (day3['Open'] < day2['Open']) and (day3['Open'] >= day2['Close']) and 
                             close_near_low(day1) and close_near_low(day2) and close_near_low(day3))
-                
+
+        # Syarat Bintang (Doji/Small Body) di tengah dengan Gap
+        # Gap Down untuk Bullish, Gap Up untuk Bearish
+        is_bull_abandoned_baby = (
+            bear_1 and sm_body_2 and bull_3 and
+            (day2['High'] < day1['Low']) and    # Gap Down: High hari 2 dibawah Low hari 1
+            (day2['High'] < day3['Low']) and    # Gap Up: High hari 2 dibawah Low hari 3
+            (day3['Close'] > mid_1)             # Konfirmasi pembalikan
+        )
+
+        is_bear_abandoned_baby = (
+            bull_1 and sm_body_2 and bear_3 and
+            (day2['Low'] > day1['High']) and    # Gap Up: Low hari 2 diatas High hari 1
+            (day2['Low'] > day3['High']) and    # Gap Down: Low hari 2 diatas High hari 3
+            (day3['Close'] < mid_1)             # Konfirmasi penurunan
+        )
+
+        # Three Inside Up (Harami + Konfirmasi Hijau)
+        is_3_inside_up = (
+            is_bull_harami_strict and           # Menggunakan logika Harami ketat yang kita bahas tadi
+            bull_3 and 
+            (day3['Close'] > day2['High'])      # Hari ke-3 ditutup diatas High hari ke-2
+        )
+
+        # Three Inside Down (Harami + Konfirmasi Merah)
+        is_3_inside_down = (
+            is_bear_harami_strict and           # Menggunakan logika Harami ketat yang kita bahas tadi
+            bear_3 and 
+            (day3['Close'] < day2['Low'])       # Hari ke-3 ditutup dibawah Low hari ke-2
+        )
+
+        # Three Outside Up (Engulfing + Konfirmasi Hijau)
+        is_3_outside_up = (
+            is_bull_engulfing_strict and        # Menggunakan logika Engulfing ketat
+            bull_3 and 
+            (day3['Close'] > day3['Open']) and
+            (day3['Close'] > day2['High'])      # Konfirmasi: Lebih tinggi dari High Engulfing kemarin
+        )
+
+        # Three Outside Down (Engulfing + Konfirmasi Merah)
+        is_3_outside_down = (
+            is_bear_engulfing_strict and        # Menggunakan logika Engulfing ketat
+            bear_3 and 
+            (day3['Close'] < day3['Open']) and
+            (day3['Close'] < day2['Low'])       # Konfirmasi: Lebih rendah dari Low Engulfing kemarin
+        )
+
+        # Kicker Bullish: Kemarin Bearish, hari ini Open GAP UP di atas Open kemarin
+        is_bull_kicker = (
+            bear_2 and bull_3 and 
+            (day3['Open'] >= day2['Open']) and 
+            (day3['Low'] > day2['High']) # Physical Gap: Low hari ini di atas High kemarin
+        )
+
+        # Kicker Bearish: Kemarin Bullish, hari ini Open GAP DOWN di bawah Open kemarin
+        is_bear_kicker = (
+            bull_2 and bear_3 and 
+            (day3['Open'] <= day2['Open']) and 
+            (day3['High'] < day2['Low']) # Physical Gap: High hari ini di bawah Low kemarin
+        )
+
+        # Island Reversal Bullish (Dasar)
+        is_bull_island = (
+            (day1['Low'] > day2['High']) and # Gap Down antara hari 1 & 2
+            (day3['Low'] > day2['High']) and # Gap Up antara hari 2 & 3
+            bull_3 # Konfirmasi hari ke-3 hijau
+        )
+
+        # Island Reversal Bearish (Puncak)
+        is_bear_island = (
+            (day1['High'] < day2['Low']) and # Gap Up antara hari 1 & 2
+            (day3['High'] < day2['Low']) and # Gap Down antara hari 2 & 3
+            bear_3 # Konfirmasi hari ke-3 merah
+        )
+
+        # Toleransi 0.1% untuk harga yang "identik"
+        def is_near(price1, price2, pct=0.001):
+            return abs(price1 - price2) / max(price1, price2) <= pct
+
+        # Tweezer Bottom: Dua hari berturut-turut Low-nya sama (di area support)
+        is_tweezer_bottom = (
+            is_near(day2['Low'], day3['Low']) and 
+            bear_2 and bull_3 and 
+            (day3['Close'] < day3['SMA_50']) # Konteks: Downtrend
+        )
+
+        # Tweezer Top: Dua hari berturut-turut High-nya sama (di area resistance)
+        is_tweezer_top = (
+            is_near(day2['High'], day3['High']) and 
+            bull_2 and bear_3 and 
+            (day3['Close'] > day3['SMA_50']) # Konteks: Uptrend
+        )
+
+        # Asumsi: day1 (paling lama), day5 (hari ini)
+        # day1, day2, day3, day4, day5 = df.iloc[-5:] 
+
+        # Rising Three Methods (Bullish Continuation)
+        is_rising_3_methods = (
+            (day1['Close'] > day1['Open']) and # Lilin 1: Hijau panjang
+            (day5['Close'] > day5['Open']) and # Lilin 5: Hijau panjang
+            (day5['Close'] > day1['Close']) and # Lilin 5 tutup di atas Lilin 1
+            all(df.iloc[-4:-1]['Close'] < df.iloc[-4:-1]['Open']) and # Lilin 2,3,4: Merah kecil
+            all(df.iloc[-4:-1]['Low'] > day1['Low']) and # Lilin 2,3,4 tetap di dalam range Lilin 1
+            all(df.iloc[-4:-1]['High'] < day1['High'])
+        )
+
+        # Falling Three Methods (Bearish Continuation)
+        is_falling_3_methods = (
+            (day1['Close'] < day1['Open']) and # Lilin 1: Merah panjang
+            (day5['Close'] < day5['Open']) and # Lilin 5: Merah panjang
+            (day5['Close'] < day1['Close']) and # Lilin 5 tutup di bawah Lilin 1
+            all(df.iloc[-4:-1]['Close'] > df.iloc[-4:-1]['Open']) and # Lilin 2,3,4: Hijau kecil
+            all(df.iloc[-4:-1]['High'] < day1['High']) and # Lilin 2,3,4 tetap di dalam range Lilin 1
+            all(df.iloc[-4:-1]['Low'] > day1['Low'])
+        )
+
         pola = "-"
         # Pola 3 Candle
         if is_3_white_soldiers: pola = "Bullish: 3 White Soldiers"
         elif is_3_black_crows: pola = "Bearish: 3 Black Crows"
         elif is_evening_star: pola = "Bearish: Evening Star"
         elif is_morning_star: pola = "Bullish: Morning Star"
+        elif is_bull_abandoned_baby: pola= "Bullish: Abandoned Baby"
+        elif is_bear_abandoned_baby: pola= "Bearsih: Abandoned Baby"
+        elif is_3_inside_up: pola= "Bullish: "3 Inside Up"
+        elif is_3_inside_down: pola= "Bearish: "3 Inside Down"
+        elif is_3_outside_up: pola= "Bullish: "3 Outside Up"
+        elif is_3_outside_down: pola= "Bullish: "3 Outside Down"
         
         # Pola 2 Candle
         elif is_bear_engulfing: pola = "Bearish: Engulfing"
@@ -353,6 +474,14 @@ def analyze_stock(ticker):
         elif is_piercing: pola = "Bullish: Piercing Line"
         elif is_bear_harami: pola = "Bearish: Harami"
         elif is_bull_harami: pola = "Bullish: Harami"
+        elif is_bull_kicker: pola = "Bullish: Kicker"
+        elif is_bear_kicker: pola = "Bearish: Kicker"
+        elif is_bull_island: pola = "Bullish: Island"
+        elif is_bear_island: pola = "Bearish: Island"
+        elif is_tweezer_bottom: pola = "Bullish: Tweezer Bottom"
+        elif is_tweezer_top: pola = "Bearish: Tweezer Top"
+        elif is_rising_3_methods: pola= "Bullish Cont: 3 Rising"
+        elif is_falling_3_methods: pola= "Bearish Cont: 3 Failing"
         
         # Pola 1 Candle
         elif is_shooting_star: pola = "Bearish: Shooting Star"
