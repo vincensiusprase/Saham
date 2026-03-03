@@ -24,9 +24,9 @@ SPREADSHEET_ID = "1U094Atkf-3EAq5jHQceAbqPYezvJxz-L-aWx4SAiFNE"
 # ==========================================
 def connect_gsheet(target_sheet_name):
     try:
-        creds_json = os.environ.get("GCP_CREDENTIALS") # Menyesuaikan dengan nama secret di Github Action sebelumnya
+        creds_json = os.environ.get("GCP_SA_KEY") # Menyesuaikan dengan nama secret di Github Action sebelumnya
         if not creds_json:
-            print("❌ GCP_CREDENTIALS tidak ditemukan di environment.")
+            print("❌ GCP_SA_KEY tidak ditemukan di environment.")
             return None
 
         creds_dict = json.loads(creds_json)
