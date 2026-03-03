@@ -229,7 +229,16 @@ def analyze_stock(ticker):
         is_bull_engulfing = bear_2 and bull_3 and (day3['Close'] > day2['Open']) and (day3['Open'] <= day2['Close'])
         is_bear_engulfing = bull_2 and bear_3 and (day3['Open'] >= day2['Close']) and (day3['Close'] <= day2['Open'])
 
-        is_piercing = bear_2 and (day3['Open'] < day2['Close']) and bull_3 and (day3['Close'] >= (day2['Close'] + body_day2/2))
+        # Menghitung titik tengah body merah secara lebih akurat
+        mid_point = (day2['Open'] + day2['Close']) / 2
+
+        # Syarat Piercing Line yang Diperketat:
+        is_piercing = (
+        bear_2 and bull_3 and 
+        (day3['Open'] < day2['Low']) and         # Syarat tambahan: Open harus gap down di bawah Low kemarin
+        (day3['Close'] > mid_point) and          # Harus tutup DI ATAS titik tengah
+        (day3['Close'] < day2['Open'])           # Tapi tidak boleh menelan seluruh body (supaya tidak jadi Engulfing)
+        )
 
         low_shad3 = min(day3['Open'], day3['Close']) - day3['Low']
         up_shad3 = day3['High'] - max(day3['Open'], day3['Close'])
