@@ -5,7 +5,7 @@
 import yfinance as yf
 import pandas as pd
 import numpy as np
-import pandas_ta as ta  # PERBAIKAN: Menggunakan pandas_ta, bukan ta
+import ta
 import gspread
 from gspread_dataframe import set_with_dataframe
 from datetime import datetime
