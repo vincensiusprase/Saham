@@ -125,7 +125,12 @@ def analyze_stock(ticker):
         # Volume MA
         df['VOL_SMA_20'] = df['Volume'].rolling(window=20).mean()
 
-        day1, day2, day3 = df.iloc[-3], df.iloc[-2], df.iloc[-1]
+        # d1=paling lama (4 hari lalu), d5=hari ini
+        d1, d2, d3, d4, d5 = df.iloc[-5], df.iloc[-4], df.iloc[-3], df.iloc[-2], df.iloc[-1]
+        
+        # Variabel alias untuk pola 1-3 candle agar kode lama tidak rusak
+        # day1 = 2 hari lalu, day2 = kemarin, day3 = hari ini
+        day1, day2, day3 = d3, d4, d5
         
         # --- KALKULASI SKOR TRADINGVIEW ---
         score, counted = 0, 0
@@ -431,27 +436,24 @@ def analyze_stock(ticker):
             (day3['Close'] > day3['SMA_50']) # Konteks: Uptrend
         )
 
-        # Asumsi: day1 (paling lama), day5 (hari ini)
-        # day1, day2, day3, day4, day5 = df.iloc[-5:] 
-
         # Rising Three Methods (Bullish Continuation)
         is_rising_3_methods = (
-            (day1['Close'] > day1['Open']) and # Lilin 1: Hijau panjang
-            (day5['Close'] > day5['Open']) and # Lilin 5: Hijau panjang
-            (day5['Close'] > day1['Close']) and # Lilin 5 tutup di atas Lilin 1
+            (d1['Close'] > d1['Open']) and # Lilin 1: Hijau panjang
+            (d5['Close'] > d5['Open']) and # Lilin 5: Hijau panjang
+            (d5['Close'] > d1['Close']) and # Lilin 5 tutup di atas Lilin 1
             all(df.iloc[-4:-1]['Close'] < df.iloc[-4:-1]['Open']) and # Lilin 2,3,4: Merah kecil
-            all(df.iloc[-4:-1]['Low'] > day1['Low']) and # Lilin 2,3,4 tetap di dalam range Lilin 1
-            all(df.iloc[-4:-1]['High'] < day1['High'])
+            all(df.iloc[-4:-1]['Low'] > d1['Low']) and # Lilin 2,3,4 tetap di dalam range Lilin 1
+            all(df.iloc[-4:-1]['High'] < d1['High'])
         )
 
         # Falling Three Methods (Bearish Continuation)
         is_falling_3_methods = (
-            (day1['Close'] < day1['Open']) and # Lilin 1: Merah panjang
-            (day5['Close'] < day5['Open']) and # Lilin 5: Merah panjang
-            (day5['Close'] < day1['Close']) and # Lilin 5 tutup di bawah Lilin 1
+            (d1['Close'] < d1['Open']) and # Lilin 1: Merah panjang
+            (d5['Close'] < d5['Open']) and # Lilin 5: Merah panjang
+            (d5['Close'] < d1['Close']) and # Lilin 5 tutup di bawah Lilin 1
             all(df.iloc[-4:-1]['Close'] > df.iloc[-4:-1]['Open']) and # Lilin 2,3,4: Hijau kecil
-            all(df.iloc[-4:-1]['High'] < day1['High']) and # Lilin 2,3,4 tetap di dalam range Lilin 1
-            all(df.iloc[-4:-1]['Low'] > day1['Low'])
+            all(df.iloc[-4:-1]['High'] < d1['High']) and # Lilin 2,3,4 tetap di dalam range Lilin 1
+            all(df.iloc[-4:-1]['Low'] > d1['Low'])
         )
 
         # Hitung komponen dasar
