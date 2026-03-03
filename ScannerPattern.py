@@ -243,8 +243,27 @@ def analyze_stock(ticker):
         (day3['Close'] > day3['SMA_50'])         # KONTEKS: Hanya valid jika harga masih di area atas/puncak
         )
 
-        is_bull_engulfing = bear_2 and bull_3 and (day3['Close'] > day2['Open']) and (day3['Open'] <= day2['Close'])
-        is_bear_engulfing = bull_2 and bear_3 and (day3['Open'] >= day2['Close']) and (day3['Close'] <= day2['Open'])
+        # Tambahkan variabel untuk mengukur perbandingan ukuran tubuh
+        body_3 = abs(day3['Close'] - day3['Open'])
+        body_2 = abs(day2['Close'] - day2['Open'])
+
+        # --- BULLISH ENGULFING ---
+        is_bull_engulfing = (
+            bear_2 and bull_3 and                         # Kemarin Merah, Hari ini Hijau
+            (day3['Close'] > day2['Open']) and            # Close hari ini di ATAS Open kemarin
+            (day3['Open'] < day2['Close']) and             # KETAT: Open hari ini di BAWAH Close kemarin (Gap Down)
+            (body_3 > body_2 * 1.2) and                    # KETAT: Body hari ini minimal 20% lebih besar dari kemarin
+            (day3['Close'] < day3['SMA_50'])               # KONTEKS: Harus muncul di area bawah/Oversold
+        )
+
+        # --- BEARISH ENGULFING ---
+        is_bear_engulfing = (
+            bull_2 and bear_3 and                         # Kemarin Hijau, Hari ini Merah
+            (day3['Open'] > day2['Close']) and             # KETAT: Open hari ini di ATAS Close kemarin (Gap Up)
+            (day3['Close'] < day2['Open']) and            # Close hari ini di BAWAH Open kemarin
+            (body_3 > body_2 * 1.2) and                    # KETAT: Body hari ini minimal 20% lebih besar dari kemarin
+            (day3['Close'] > day3['SMA_50'])               # KONTEKS: Harus muncul di area atas/Overbought
+        )
 
         # Menghitung titik tengah body merah secara lebih akurat
         mid_point = (day2['Open'] + day2['Close']) / 2
@@ -257,14 +276,35 @@ def analyze_stock(ticker):
         (day3['Close'] < day2['Open'])           # Tapi tidak boleh menelan seluruh body (supaya tidak jadi Engulfing)
         )
 
-        low_shad3 = min(day3['Open'], day3['Close']) - day3['Low']
-        up_shad3 = day3['High'] - max(day3['Open'], day3['Close'])
-        
-        is_hammer = (low_shad3 >= (2 * max(body_day3, 0.0001))) and (up_shad3 <= (0.5 * max(body_day3, 0.0001)))
-        is_shooting_star = (up_shad3 >= (2 * max(body_day3, 0.0001))) and (low_shad3 <= (0.5 * max(body_day3, 0.0001)))
+        # Hitung komponen candle hari ini
+        body_3 = abs(day3['Close'] - day3['Open'])
+        upper_shade_3 = day3['High'] - max(day3['Open'], day3['Close'])
+        lower_shade_3 = min(day3['Open'], day3['Close']) - day3['Low']
 
-        mid_2 = day2['Open'] + (body_day2/2) if bull_2 else day2['Close'] + (body_day2/2)
-        is_dark_cloud = bull_2 and bear_3 and (day3['Open'] > day2['Close']) and (day3['Close'] <= mid_2) and (day3['Close'] >= day2['Open'])
+        # Rumus Hammer yang Ketat:
+        is_hammer = (
+            (lower_shade_3 >= 2 * body_3) and    # Ekor bawah minimal 2x panjang body
+            (upper_shade_3 <= 0.1 * body_3) and  # Ekor atas harus sangat pendek atau tidak ada
+            (day3['Close'] < day3['SMA_50'])      # KONTEKS: Harus muncul di area bawah (Downtrend)
+        )
+
+        # Rumus Shooting Star yang Ketat:
+        is_shooting_star = (
+            (upper_shade_3 >= 2 * body_3) and    # Ekor atas minimal 2x panjang body
+            (lower_shade_3 <= 0.1 * body_3) and  # Ekor bawah harus sangat pendek atau tidak ada
+            (day3['Close'] > day3['SMA_50'])      # KONTEKS: Harus muncul di area atas (Uptrend)
+        )
+
+        # Hitung Titik Tengah Body Hijau Kemarin
+        mid_2 = (day2['Open'] + day2['Close']) / 2
+
+        is_dark_cloud = (
+            bull_2 and bear_3 and                    # Urutan Hijau lalu Merah
+            (day3['Open'] > day2['High']) and        # KETAT: Harus dibuka di atas High kemarin (Gap Up)
+            (day3['Close'] <= mid_2) and             # Penetrasi masuk minimal 50%
+            (day3['Close'] > day2['Open']) and       # Tidak boleh lebih rendah dari Open kemarin (agar tidak jadi Engulfing)
+            (day3['Close'] > day3['SMA_50'])         # KONTEKS: Harus terjadi di area atas/Uptrend
+        )
 
         # Tentukan batas atas dan bawah body untuk day2 (kemarin) dan day3 (hari ini)
         body_top_2 = max(day2['Open'], day2['Close'])
