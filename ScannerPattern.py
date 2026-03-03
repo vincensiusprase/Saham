@@ -500,7 +500,7 @@ def analyze_stock(ticker):
         elif is_3_inside_up: pola= "Bullish: 3 Inside Up"
         elif is_3_inside_down: pola= "Bearish: 3 Inside Down"
         elif is_3_outside_up: pola= "Bullish: 3 Outside Up"
-        elif is_3_outside_down: pola= "Bullish: 3 Outside Down"
+        elif is_3_outside_down: pola= "Bearish: 3 Outside Down"
         
         # Pola 2 Candle
         elif is_bear_engulfing: pola = "Bearish: Engulfing"
