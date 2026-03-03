@@ -223,8 +223,25 @@ def analyze_stock(ticker):
         sm_body_2 = body_day2 <= (0.3 * max(body_day1, 0.0001))
         mid_1 = day1['Close'] + (body_day1/2) if bear_1 else day1['Open'] + (body_day1/2)
         
-        is_morning_star = bear_1 and sm_body_2 and bull_3 and (day3['Close'] >= mid_1)
-        is_evening_star = bull_1 and sm_body_2 and bear_3 and (day3['Close'] <= mid_1)
+        # Syarat Morning Star
+        is_morning_star = (
+        bear_1 and                               # Candle 1: Merah (Bearish)
+        sm_body_2 and                            # Candle 2: Kecil (Bintang)
+        (day2['Low'] < day1['Low']) and          # Syarat: Bintang harus membuat Low lebih rendah dari kemarin
+        bull_3 and                               # Candle 3: Hijau (Bullish)
+        (day3['Close'] >= mid_1) and             # Candle 3: Menembus setengah body Candle 1
+        (day3['Close'] < day3['SMA_50'])         # KONTEKS: Biasanya lebih akurat jika muncul di area bawah (di bawah SMA 50)
+        )
+
+        # Syarat Evening Star
+        is_evening_star = (
+        bull_1 and                               # Candle 1: Hijau (Bullish)
+        sm_body_2 and                            # Candle 2: Kecil (Bintang)
+        (day2['High'] > day1['High']) and        # Syarat: Bintang harus melompat lebih tinggi (Euphoria)
+        bear_3 and                               # Candle 3: Merah (Bearish)
+        (day3['Close'] <= mid_1) and             # Candle 3: Menembus ke bawah setengah body Candle 1
+        (day3['Close'] > day3['SMA_50'])         # KONTEKS: Hanya valid jika harga masih di area atas/puncak
+        )
 
         is_bull_engulfing = bear_2 and bull_3 and (day3['Close'] > day2['Open']) and (day3['Open'] <= day2['Close'])
         is_bear_engulfing = bull_2 and bear_3 and (day3['Open'] >= day2['Close']) and (day3['Close'] <= day2['Open'])
