@@ -371,7 +371,7 @@ def analyze_stock(ticker):
 
         # Three Outside Up (Engulfing + Konfirmasi Hijau)
         is_3_outside_up = (
-            is_bull_engulfing_strict and        # Menggunakan logika Engulfing ketat
+            is_bull_engulfing and               # Menggunakan logika Engulfing ketat
             bull_3 and 
             (day3['Close'] > day3['Open']) and
             (day3['Close'] > day2['High'])      # Konfirmasi: Lebih tinggi dari High Engulfing kemarin
@@ -379,7 +379,7 @@ def analyze_stock(ticker):
 
         # Three Outside Down (Engulfing + Konfirmasi Merah)
         is_3_outside_down = (
-            is_bear_engulfing_strict and        # Menggunakan logika Engulfing ketat
+            is_bear_engulfing and               # Menggunakan logika Engulfing ketat
             bear_3 and 
             (day3['Close'] < day3['Open']) and
             (day3['Close'] < day2['Low'])       # Konfirmasi: Lebih rendah dari Low Engulfing kemarin
