@@ -321,7 +321,7 @@ def analyze_stock(ticker):
             (day3['Close'] < day3['SMA_50'])             # Validasi: Muncul di bawah (area support)
         )
 
-        # --- REVISI BEARISH HARAMI ---
+        # --- BEARISH HARAMI ---
         is_bear_harami = (
             bull_2 and bear_3 and                        # Kemarin Hijau, Hari ini Merah
             (body_top_3 <= body_top_2) and               # Atas Merah di bawah Atas Hijau
@@ -357,14 +357,14 @@ def analyze_stock(ticker):
 
         # Three Inside Up (Harami + Konfirmasi Hijau)
         is_3_inside_up = (
-            is_bull_harami_strict and           # Menggunakan logika Harami ketat yang kita bahas tadi
+            is_bull_harami and                  # Menggunakan logika Harami ketat yang kita bahas tadi
             bull_3 and 
             (day3['Close'] > day2['High'])      # Hari ke-3 ditutup diatas High hari ke-2
         )
 
         # Three Inside Down (Harami + Konfirmasi Merah)
         is_3_inside_down = (
-            is_bear_harami_strict and           # Menggunakan logika Harami ketat yang kita bahas tadi
+            is_bear_harami and                  # Menggunakan logika Harami ketat yang kita bahas tadi
             bear_3 and 
             (day3['Close'] < day2['Low'])       # Hari ke-3 ditutup dibawah Low hari ke-2
         )
