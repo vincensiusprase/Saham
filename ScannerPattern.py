@@ -454,6 +454,39 @@ def analyze_stock(ticker):
             all(df.iloc[-4:-1]['Low'] > day1['Low'])
         )
 
+        # Hitung komponen dasar
+        range_3 = day3['High'] - day3['Low']
+        body_3 = abs(day3['Close'] - day3['Open'])
+        upper_wick_3 = day3['High'] - max(day3['Open'], day3['Close'])
+        lower_wick_3 = min(day3['Open'], day3['Close']) - day3['Low']
+
+        # Definisi Doji Umum (Body sangat tipis)
+        is_doji = body_3 <= (0.1 * range_3)
+
+        # Doji Spesifik:
+        is_long_legged_doji = is_doji and (upper_wick_3 > 0.3 * range_3) and (lower_wick_3 > 0.3 * range_3)
+        is_gravestone_doji = is_doji and (upper_wick_3 > 0.7 * range_3) and (lower_wick_3 < 0.1 * range_3)
+        is_dragonfly_doji = is_doji and (lower_wick_3 > 0.7 * range_3) and (upper_wick_3 < 0.1 * range_3)
+
+        is_inverted_hammer = (
+            (upper_wick_3 >= 2 * body_3) and       # Ekor atas minimal 2x panjang body
+            (lower_wick_3 <= 0.1 * body_3) and     # Ekor bawah hampir tidak ada
+            (day3['Close'] < day3['SMA_50']) and   # KONTEKS: Harus di area bawah
+            (body_3 > 0)                           # Harus punya body sedikit (bukan Doji)
+        )
+
+        is_hanging_man = (
+            (lower_wick_3 >= 2 * body_3) and       # Ekor bawah minimal 2x panjang body
+            (upper_wick_3 <= 0.1 * body_3) and     # Ekor atas hampir tidak ada
+            (day3['Close'] > day3['SMA_50']) and   # KONTEKS: Harus di area puncak
+            (bull_2)                               # Biasanya didahului tren naik yang kuat
+        )
+
+        is_spinning_top = (
+            (body_3 > 0.1 * range_3) and (body_3 <= 0.3 * range_3) and  # Body kecil tapi bukan Doji
+            (upper_wick_3 > body_3) and (lower_wick_3 > body_3)         # Ekor atas & bawah lebih panjang dari body
+        )
+
         pola = "-"
         # Pola 3 Candle
         if is_3_white_soldiers: pola = "Bullish: 3 White Soldiers"
@@ -486,6 +519,12 @@ def analyze_stock(ticker):
         # Pola 1 Candle
         elif is_shooting_star: pola = "Bearish: Shooting Star"
         elif is_hammer: pola = "Bullish: Hammer"
+        elif is_gravestone_doji: pola = "Bearish: Gravestone Doji"
+        elif is_dragonfly_doji: pola = "Bullish: Dragonfly Doji"
+        elif is_long_legged_doji: pola ="WARNING: Indecision"
+        elif is_inverted_hammer: pola ="Bullish: Inverted Hammer"
+        elif is_hanging_man: pola ="Bearish: Hanging Man"
+        elif is_spinning_top: pola="Netral"
 
         return {
             "Ticker": ticker,
