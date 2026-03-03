@@ -266,9 +266,28 @@ def analyze_stock(ticker):
         mid_2 = day2['Open'] + (body_day2/2) if bull_2 else day2['Close'] + (body_day2/2)
         is_dark_cloud = bull_2 and bear_3 and (day3['Open'] > day2['Close']) and (day3['Close'] <= mid_2) and (day3['Close'] >= day2['Open'])
 
-        is_bull_harami = bear_2 and bull_3 and (day3['Open'] >= day2['Close']) and (day3['Close'] <= day2['Open']) and (body_day3 <= (0.5 * body_day2))
+        # Tentukan batas atas dan bawah body untuk day2 (kemarin) dan day3 (hari ini)
+        body_top_2 = max(day2['Open'], day2['Close'])
+        body_bottom_2 = min(day2['Open'], day2['Close'])
 
-        is_bear_harami = bull_2 and bear_3 and (day3['Open'] <= day2['Close']) and (day3['Close'] >= day2['Open']) and (body_day3 <= (0.5 * body_day2))
+        body_top_3 = max(day3['Open'], day3['Close'])
+        body_bottom_3 = min(day3['Open'], day3['Close'])
+
+        # --- BULLISH HARAMI ---
+        is_bull_harami = (
+            bear_2 and bull_3 and                        # Kemarin Merah, Hari ini Hijau
+            (body_top_3 <= body_top_2) and               # Atas Hijau di bawah Atas Merah
+            (body_bottom_3 >= body_bottom_2) and         # Bawah Hijau di atas Bawah Merah
+            (day3['Close'] < day3['SMA_50'])             # Validasi: Muncul di bawah (area support)
+        )
+
+        # --- REVISI BEARISH HARAMI ---
+        is_bear_harami = (
+            bull_2 and bear_3 and                        # Kemarin Hijau, Hari ini Merah
+            (body_top_3 <= body_top_2) and               # Atas Merah di bawah Atas Hijau
+            (body_bottom_3 >= body_bottom_2) and         # Bawah Merah di atas Bawah Hijau
+            (day3['Close'] > day3['SMA_50'])             # Validasi: Muncul di atas (area puncak)
+        )
 
         def close_near_low(row):
             length = row['High'] - row['Low']
