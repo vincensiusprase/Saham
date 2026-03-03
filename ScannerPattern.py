@@ -429,6 +429,14 @@ def analyze_stock(ticker):
         )
 
         # --- Shooting Star ---
+        # Kalkulasi Pembantu
+        is_valid_uptrend = (
+                (day3['SMA_20'] > day3['SMA_50']) and
+                (day3['SMA_20'] > df['SMA_20'].iloc[-3]) and
+                (day3['Close'] > df['Close'].iloc[-3]) and
+                (df['Close'].iloc[-3] > df['Close'].iloc[-6])
+            )
+        
         is_shooting_star = (
             (range_day3 > 0) and
             (body_day3 > 0) and
@@ -450,12 +458,7 @@ def analyze_stock(ticker):
             bear_3 and
             
             # Konteks uptrend
-            is_valid_uptrend = (
-                (day3['SMA_20'] > day3['SMA_50']) and
-                (day3['SMA_20'] > df['SMA_20'].iloc[-3]) and
-                (day3['Close'] > df['Close'].iloc[-3]) and
-                (df['Close'].iloc[-3] > df['Close'].iloc[-6])
-            )
+            is_valid_uptrend
         )
 
         # --- Dark Cloud ---
