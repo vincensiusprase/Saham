@@ -228,6 +228,15 @@ def analyze_stock(ticker):
         mid_point_day1 = (day1['Open'] + day1['Close']) / 2
         mid_point_day2 = (day2['Open'] + day2['Close']) / 2
         mid_point_day3 = (day3['Open'] + day3['Close']) / 2
+
+        upper_wick_day1 = day1['High'] - max(day1['Open'], day1['Close'])
+        lower_wick_day1 = min(day1['Open'], day1['Close']) - day1['Low']
+        upper_wick_day2 = day2['High'] - max(day2['Open'], day2['Close'])
+        lower_wick_day2 = min(day2['Open'], day2['Close']) - day2['Low']      
+        upper_wick_day3 = day3['High'] - max(day3['Open'], day3['Close'])
+        lower_wick_day3 = min(day3['Open'], day3['Close']) - day3['Low']
+
+        # --- 3 White Soldiers ---
         
         def close_near_high(row):
             length = row['High'] - row['Low']
@@ -235,11 +244,62 @@ def analyze_stock(ticker):
 
         vol_conf = (day3['Volume'] > day3['VOL_SMA_20']) or (day3['Volume'] > day2['Volume'])
         
-        is_3_white_soldiers = (bull_1 and bull_2 and bull_3 and (day2['Close'] > day1['Close']) and (day3['Close'] > day2['Close']) and 
-                               (day2['Open'] > day1['Open']) and (day2['Open'] <= day1['Close']) and 
-                               (day3['Open'] > day2['Open']) and (day3['Open'] <= day2['Close']) and 
-                               close_near_high(day1) and close_near_high(day2) and close_near_high(day3) and vol_conf)
+        is_3_white_soldiers = (
+            # Downtrend context
+            (day1['SMA_20'] < day1['SMA_50']) and
+            
+            bull_1 and bull_2 and bull_3 and
+            
+            # Body kuat
+            (body_day1 >= 0.5 * range_day1) and
+            (body_day2 >= 0.5 * range_day2) and
+            (body_day3 >= 0.5 * range_day3) and
+            
+            # Close makin naik
+            (day2['Close'] > day1['Close']) and
+            (day3['Close'] > day2['Close']) and
+            
+            # Open inside body sebelumnya
+            (day2['Open'] >= day1['Open']) and (day2['Open'] <= day1['Close']) and
+            (day3['Open'] >= day2['Open']) and (day3['Open'] <= day2['Close']) and
+            
+            close_near_high(day1) and
+            close_near_high(day2) and
+            close_near_high(day3) and
 
+            # Volume konfirmasi
+            vol_conf
+        )
+
+        # --- 3 Black Crows ---
+        def close_near_low(row):
+            length = row['High'] - row['Low']
+            return (min(row['Open'], row['Close']) - row['Low']) <= (0.2 * length) if length > 0 else True
+
+        is_3_black_crows = (
+            # Uptrend context
+            (day1['SMA_20'] > day1['SMA_50']) and
+            
+            bear_1 and bear_2 and bear_3 and
+            
+            # Body kuat
+            (body_day1 >= 0.5 * range_day1) and
+            (body_day2 >= 0.5 * range_day2) and
+            (body_day3 >= 0.5 * range_day3) and
+            
+            # Close makin turun
+            (day2['Close'] < day1['Close']) and
+            (day3['Close'] < day2['Close']) and
+            
+            # Open inside body sebelumnya
+            (day2['Open'] <= day1['Open']) and (day2['Open'] >= day1['Close']) and
+            (day3['Open'] <= day2['Open']) and (day3['Open'] >= day2['Close']) and
+            
+            close_near_low(day1) and
+            close_near_low(day2) and
+            close_near_low(day3)
+        )
+        
         is_downtrend = (
             (day1['Close'] < day1['SMA_20']) and
             (day1['SMA_20'] < day1['SMA_50'])
@@ -255,7 +315,7 @@ def analyze_stock(ticker):
         mid_day1 = (day1['Open'] + day1['Close']) / 2
         sm_body_2 = (range_day2 > 0) and (body_day2 <= 0.3 * range_day2)
 
-        # Syarat Morning Star yang Diperketat
+        # --- Morning Star --- 
         is_morning_star = (
             is_downtrend and
             
@@ -276,7 +336,7 @@ def analyze_stock(ticker):
             (day3['Close'] >= mid_day1)
         )
 
-        # Syarat Evening Star
+        # --- Evening Star ---
         is_evening_star = (
             is_uptrend and
             
@@ -315,10 +375,18 @@ def analyze_stock(ticker):
             (day3['Close'] > day3['SMA_50'])               # KONTEKS: Harus muncul di area atas/Overbought
         )
 
+        # --- Piercing Line ---
+        # Kalkulasi Pembantu Piercing Line
+        penetration_ratio = (day3['Close'] - day2['Close']) / body_day2
+        is_strong_piercing = penetration_ratio >= 0.6
+        
         # Syarat Piercing Line yang Diperketat:
         is_piercing = (
             (range_day2 > 0) and
             (range_day3 > 0) and
+
+            # Konteks downtrend
+            (day2['SMA_20'] < day2['SMA_50']) and
             
             # Candle 2: Bearish kuat
             bear_2 and
@@ -326,7 +394,8 @@ def analyze_stock(ticker):
             
             # Candle 3: Bullish
             bull_3 and
-            
+            (body_day3 >= 0.5 * body_day2) and
+
             # Gap down ringan (lebih realistis dari < Low)
             (day3['Open'] <= day2['Close']) and
             
@@ -334,10 +403,11 @@ def analyze_stock(ticker):
             (day3['Close'] > mid_point_day2) and
             
             # Tidak jadi bullish engulfing
-            (day3['Close'] < day2['Open'])
+            (day3['Close'] < day2['Open']) and
+            (penetration_ratio >= 0.6)
         )
 
-        # Rumus Hammer yang Ketat:
+        # --- Hammer ---
         is_hammer = (
             (range_day3 > 0) and
             (body_day3 > 0) and
@@ -358,7 +428,7 @@ def analyze_stock(ticker):
             (day3['Close'] < day3['SMA_20'])
         )
 
-        # Rumus Shooting Star yang Ketat:
+        # --- Shooting Star ---
         is_shooting_star = (
             (range_day3 > 0) and
             (body_day3 > 0) and
@@ -380,9 +450,15 @@ def analyze_stock(ticker):
             bear_3 and
             
             # Konteks uptrend
-            (day3['Close'] > day3['SMA_20'])
+            is_valid_uptrend = (
+                (day3['SMA_20'] > day3['SMA_50']) and
+                (day3['SMA_20'] > df['SMA_20'].iloc[-3]) and
+                (day3['Close'] > df['Close'].iloc[-3]) and
+                (df['Close'].iloc[-3] > df['Close'].iloc[-6])
+            )
         )
 
+        # --- Dark Cloud ---
         is_dark_cloud = (
             bull_2 and bear_3 and                    # Urutan Hijau lalu Merah
             (day3['Open'] > day2['High']) and        # KETAT: Harus dibuka di atas High kemarin (Gap Up)
@@ -391,6 +467,7 @@ def analyze_stock(ticker):
             (day3['Close'] > day3['SMA_50'])         # KONTEKS: Harus terjadi di area atas/Uptrend
         )
 
+        # --- HARAMI ---
         # Tentukan batas atas dan bawah body untuk day2 (kemarin) dan day3 (hari ini)
         body_top_2 = max(day2['Open'], day2['Close'])
         body_bottom_2 = min(day2['Open'], day2['Close'])
@@ -400,105 +477,152 @@ def analyze_stock(ticker):
 
         # --- BULLISH HARAMI ---
         is_bull_harami = (
-            bear_2 and bull_3 and                        # Kemarin Merah, Hari ini Hijau
-            (body_top_3 <= body_top_2) and               # Atas Hijau di bawah Atas Merah
-            (body_bottom_3 >= body_bottom_2) and         # Bawah Hijau di atas Bawah Merah
-            (day3['Close'] < day3['SMA_50'])             # Validasi: Muncul di bawah (area support)
+            # Downtrend context
+            (day2['SMA_20'] < day2['SMA_50']) and
+            
+            # Candle 2 bearish kuat
+            bear_2 and
+            (body_day2 >= 0.5 * range_day2) and
+            
+            # Candle 3 bullish kecil
+            bull_3 and
+            (body_day3 <= 0.6 * body_day2) and
+            
+            # Body inside
+            (body_top_3 <= body_top_2) and
+            (body_bottom_3 >= body_bottom_2)
         )
 
         # --- BEARISH HARAMI ---
         is_bear_harami = (
-            bull_2 and bear_3 and                        # Kemarin Hijau, Hari ini Merah
-            (body_top_3 <= body_top_2) and               # Atas Merah di bawah Atas Hijau
-            (body_bottom_3 >= body_bottom_2) and         # Bawah Merah di atas Bawah Hijau
-            (day3['Close'] > day3['SMA_50'])             # Validasi: Muncul di atas (area puncak)
+            # Uptrend context
+            (day2['SMA_20'] > day2['SMA_50']) and
+            
+            # Candle 2 bullish kuat
+            bull_2 and
+            (body_day2 >= 0.5 * range_day2) and
+            
+            # Candle 3 bearish kecil
+            bear_3 and
+            (body_day3 <= 0.6 * body_day2) and
+            
+            # Body inside
+            (body_top_3 <= body_top_2) and
+            (body_bottom_3 >= body_bottom_2)
         )
 
-        def close_near_low(row):
-            length = row['High'] - row['Low']
-            return (min(row['Open'], row['Close']) - row['Low']) <= (0.2 * length) if length > 0 else True
-
-        is_3_black_crows = (bear_1 and bear_2 and bear_3 and 
-                            (day2['Close'] < day1['Close']) and (day3['Close'] < day2['Close']) and 
-                            (day2['Open'] < day1['Open']) and (day2['Open'] >= day1['Close']) and 
-                            (day3['Open'] < day2['Open']) and (day3['Open'] >= day2['Close']) and 
-                            close_near_low(day1) and close_near_low(day2) and close_near_low(day3))
-
-        # Syarat Bintang (Doji/Small Body) di tengah dengan Gap
+        
+        # --- BULLISH ABANDONED BABY ---
         # Gap Down untuk Bullish, Gap Up untuk Bearish
         is_bull_abandoned_baby = (
-            bear_1 and sm_body_2 and bull_3 and
-            (day2['High'] < day1['Low']) and    # Gap Down: High hari 2 dibawah Low hari 1
-            (day2['High'] < day3['Low']) and    # Gap Up: High hari 2 dibawah Low hari 3
-            (day3['Close'] > mid_1)             # Konfirmasi pembalikan
+            # Downtrend context
+            (day1['SMA_20'] < day1['SMA_50']) and
+            # Struktur candle
+            bear_1 and
+            bull_3 and
+            # Candle 1 & 3 kuat
+            (body_day1 >= 0.5 * range_day1) and
+            (body_day3 >= 0.5 * range_day3) and
+            # Candle 2 HARUS DOJI
+            (body_day2 <= 0.1 * range_day2) and
+            # GAP kiri
+            (day2['High'] < day1['Low']) and
+            # GAP kanan
+            (day2['High'] < day3['Low']) and
+            # Konfirmasi close > midpoint day1
+            (day3['Close'] > mid_1)
         )
 
+        # --- BEARISH ABANDONED BABY ---
         is_bear_abandoned_baby = (
-            bull_1 and sm_body_2 and bear_3 and
-            (day2['Low'] > day1['High']) and    # Gap Up: Low hari 2 diatas High hari 1
-            (day2['Low'] > day3['High']) and    # Gap Down: Low hari 2 diatas High hari 3
-            (day3['Close'] < mid_1)             # Konfirmasi penurunan
+            # Uptrend context
+            (day1['SMA_20'] > day1['SMA_50']) and
+            bull_1 and
+            bear_3 and
+            # Candle 1 & 3 kuat
+            (body_day1 >= 0.5 * range_day1) and
+            (body_day3 >= 0.5 * range_day3) and
+            # Candle 2 DOJI
+            (body_day2 <= 0.1 * range_day2) and
+            # GAP kiri
+            (day2['Low'] > day1['High']) and
+            # GAP kanan
+            (day2['Low'] > day3['High']) and
+            # Konfirmasi close < midpoint day1
+            (day3['Close'] < mid_1)
         )
 
-        # Three Inside Up (Harami + Konfirmasi Hijau)
+        # --- Three Inside Up (Harami + Konfirmasi Hijau) ---
         is_3_inside_up = (
             is_bull_harami and                  # Menggunakan logika Harami ketat yang kita bahas tadi
             bull_3 and 
-            (day3['Close'] > day2['High'])      # Hari ke-3 ditutup diatas High hari ke-2
+            (day3['Close'] > day1['High'])      # Hari ke-3 ditutup diatas High hari ke-1
         )
 
-        # Three Inside Down (Harami + Konfirmasi Merah)
+        # --- Three Inside Down (Harami + Konfirmasi Merah) ---
         is_3_inside_down = (
             is_bear_harami and                  # Menggunakan logika Harami ketat yang kita bahas tadi
             bear_3 and 
-            (day3['Close'] < day2['Low'])       # Hari ke-3 ditutup dibawah Low hari ke-2
+            (day3['Close'] < day1['Low'])       # Hari ke-3 ditutup dibawah Low hari ke-1
         )
 
-        # 1. Definisikan dulu Engulfing yang terjadi ANTARA day1 dan day2 (Bukan hari ini)
-        is_engulfing_yesterday_bull = (
-            bear_1 and bull_2 and                       # lusa merah, kemarin hijau
-            (day2['Close'] > day1['Open']) and          # kemarin menelan lusa
-            (day2['Open'] < day1['Close']) and
-            (body_day2 > body_day1 * 1.2)               # Engulfing yang kuat
-        )
-
-        # 2. Baru kemudian deteksi Three Outside Up menggunakan konfirmasi hari ini (day3)
+        # --- Three Outside Up ---
+        
         is_3_outside_up = (
-            is_engulfing_yesterday_bull and                  # Engulfing sudah terjadi kemarin
-            bull_3 and                                  # Hari ini konfirmasi hijau
-            (day3['Close'] > day2['Close'])             # Hari ini tutup lebih tinggi dari kemarin
+        # Downtrend context
+        (day1['SMA_20'] < day1['SMA_50']) and
+        
+        # Engulfing terjadi di day1–day2
+        bear_1 and bull_2 and
+        (day2['Close'] > day1['Open']) and
+        (day2['Open'] < day1['Close']) and
+        (body_day2 > body_day1 * 1.2) and
+        
+        # Konfirmasi day3
+        bull_3 and
+        (body_day3 >= 0.5 * range_day3) and
+        (day3['Close'] > day2['High'])
         )
 
-        # 1. Cek apakah kemarin terjadi Bearish Engulfing yang menelan lusa
-        is_engulfing_yesterday_bear = (
-            bull_1 and bear_2 and                       # Lusa hijau, kemarin merah
-            (day2['Close'] < day1['Open']) and          # Badan merah kemarin menelan badan hijau lusa
-            (day2['Open'] > day1['Close']) and
-            (body_day2 > body_day1 * 1.2)               # Syarat ketat: badan merah harus dominan
-        )
-
-        # 2. Konfirmasi Three Outside Down hari ini
+        # --- Three Outside Down ---
         is_3_outside_down = (
-            is_engulfing_yesterday_bear and             # Kemarin sudah sah Engulfing
-            bear_3 and                                  # Hari ini lanjut merah (konfirmasi)
-            (day3['Close'] < day2['Low'])               # Hari ini tutup di bawah harga terendah kemarin
+            # Uptrend context
+            (day1['SMA_20'] > day1['SMA_50']) and
+            # Bearish Engulfing
+            bull_1 and bear_2 and
+            (day2['Close'] < day1['Open']) and
+            (day2['Open'] > day1['Close']) and
+            (body_day2 > body_day1 * 1.2) and
+            # Konfirmasi
+            bear_3 and
+            (body_day3 >= 0.5 * range_day3) and
+            (day3['Close'] < day2['Low'])
         )
 
-        # Kicker Bullish: Kemarin Bearish, hari ini Open GAP UP di atas Open kemarin
+        # --- Kicker Bullish ---
         is_bull_kicker = (
-            bear_2 and bull_3 and 
-            (day3['Open'] >= day2['Open']) and 
-            (day3['Low'] > day2['High']) # Physical Gap: Low hari ini di atas High kemarin
+            # Candle pertama bearish kuat
+            bear_2 and
+            (body_day2 >= 0.5 * range_day2) and
+            # Candle kedua bullish kuat
+            bull_3 and
+            (body_day3 >= 0.5 * range_day3) and
+            # GAP di OPEN
+            (day3['Open'] > day2['High']) and
+            # Tidak ada overlap
+            (day3['Low'] > day2['High'])
         )
 
-        # Kicker Bearish: Kemarin Bullish, hari ini Open GAP DOWN di bawah Open kemarin
+        # --- Kicker Bearish ---
         is_bear_kicker = (
-            bull_2 and bear_3 and 
-            (day3['Open'] <= day2['Open']) and 
-            (day3['High'] < day2['Low']) # Physical Gap: High hari ini di bawah Low kemarin
+            bull_2 and
+            (body_day2 >= 0.5 * range_day2) and
+            bear_3 and
+            (body_day3 >= 0.5 * range_day3) and
+            (day3['Open'] < day2['Low'])
         )
 
-        # Island Reversal Bullish (Dasar)
+        # --- Island Reversal Bullish (Dasar) ---
         is_bull_island = (
             # Gap Down: Low d1 harus lebih tinggi dari High semua candle di dalam pulau (d2, d3, d4)
             (d1['Low'] > max(d2['High'], d3['High'], d4['High'])) and 
@@ -507,7 +631,7 @@ def analyze_stock(ticker):
             (d5['Close'] > d5['Open']) # Konfirmasi hari ini hijau
         )
 
-        # Island Reversal Bearish (Puncak)
+        # --- Island Reversal Bearish (Puncak) ---
         is_bear_island = (
             # Gap Up: High d1 harus lebih rendah dari Low semua candle di dalam pulau (d2, d3, d4)
             (d1['High'] < min(d2['Low'], d3['Low'], d4['Low'])) and
@@ -516,75 +640,143 @@ def analyze_stock(ticker):
             (d5['Close'] < d5['Open']) # Konfirmasi hari ini merah
         )
 
+        # --- Tweezer ---
         # Toleransi 0.1% untuk harga yang "identik"
         def is_near(price1, price2, pct=0.001):
             return abs(price1 - price2) / max(price1, price2) <= pct
 
-        # Tweezer Bottom: Dua hari berturut-turut Low-nya sama (di area support)
+        # --- Tweezer Bottom ---
         is_tweezer_bottom = (
-            is_near(day2['Low'], day3['Low']) and 
-            bear_2 and bull_3 and 
-            (day3['Close'] < day3['SMA_50']) # Konteks: Downtrend
+            (day3['SMA_20'] < day3['SMA_50']) and         # Downtrend context
+            is_near(day2['Low'], day3['Low']) and         # Low hampir sama
+            bear_2 and bull_3 and                         # Struktur candle
+            (body_day3 >= 0.5 * range_day3)               # Candle kedua cukup kuat
         )
 
-        # Tweezer Top: Dua hari berturut-turut High-nya sama (di area resistance)
+        # --- Tweezer Top ---
         is_tweezer_top = (
-            is_near(day2['High'], day3['High']) and 
-            bull_2 and bear_3 and 
-            (day3['Close'] > day3['SMA_50']) # Konteks: Uptrend
+            (day3['SMA_20'] > day3['SMA_50']) and        # Uptrend context
+            is_near(day2['High'], day3['High']) and      # High hampir sama
+            bull_2 and bear_3 and                        # Struktur candle 
+            (body_day3 >= 0.5 * range_day3)              # Konfirmasi kekuatan
         )
 
-        # Rising Three Methods (Bullish Continuation)
+        
+        # Kalkulasi Pembantu Raising & Failing Methods
+        body1 = abs(d1['Close'] - d1['Open'])
+        body5 = abs(d5['Close'] - d5['Open'])
+        range1 = d1['High'] - d1['Low']
+        range5 = d5['High'] - d5['Low']
+        middle = df.iloc[-4:-1]
+
+        # --- Rising Three Methods (Bullish Continuation) ---
         is_rising_3_methods = (
-            (d1['Close'] > d1['Open']) and # Lilin 1: Hijau panjang
-            (d5['Close'] > d5['Open']) and # Lilin 5: Hijau panjang
-            (d5['Close'] > d1['Close']) and # Lilin 5 tutup di atas Lilin 1
-            all(df.iloc[-4:-1]['Close'] < df.iloc[-4:-1]['Open']) and # Lilin 2,3,4: Merah kecil
-            all(df.iloc[-4:-1]['Low'] > d1['Low']) and # Lilin 2,3,4 tetap di dalam range Lilin 1
-            all(df.iloc[-4:-1]['High'] < d1['High'])
+            # Strong bullish candle 1
+            (d1['Close'] > d1['Open']) and
+            (body1 > range1 * 0.6) and
+            
+            # Middle candles small & bearish
+            all(middle['Close'] < middle['Open']) and
+            all(middle['High'] < d1['High']) and
+            all(middle['Low'] > d1['Low']) and
+            all(abs(middle.iloc[i]['Close'] - middle.iloc[i]['Open']) < body1 * 0.5 for i in range(3)) and
+            
+            # Strong breakout candle 5
+            (d5['Close'] > d5['Open']) and
+            (body5 > range5 * 0.6) and
+            (d5['Close'] > d1['Close'])
         )
 
-        # Falling Three Methods (Bearish Continuation)
+        # --- Falling Three Methods (Bearish Continuation) ---
         is_falling_3_methods = (
-            (d1['Close'] < d1['Open']) and # Lilin 1: Merah panjang
-            (d5['Close'] < d5['Open']) and # Lilin 5: Merah panjang
-            (d5['Close'] < d1['Close']) and # Lilin 5 tutup di bawah Lilin 1
-            all(df.iloc[-4:-1]['Close'] > df.iloc[-4:-1]['Open']) and # Lilin 2,3,4: Hijau kecil
-            all(df.iloc[-4:-1]['High'] < d1['High']) and # Lilin 2,3,4 tetap di dalam range Lilin 1
+            (d1['Close'] < d1['Open']) and
+            (d5['Close'] < d5['Open']) and
+            (d5['Close'] < d1['Close']) and
+            all(df.iloc[-4:-1]['Close'] > df.iloc[-4:-1]['Open']) and
+            all(df.iloc[-4:-1]['High'] < d1['High']) and
             all(df.iloc[-4:-1]['Low'] > d1['Low'])
         )
 
-        # Hitung komponen dasar
-        range_3 = day3['High'] - day3['Low']
-        body_3 = abs(day3['Close'] - day3['Open'])
-        upper_wick_3 = day3['High'] - max(day3['Open'], day3['Close'])
-        lower_wick_3 = min(day3['Open'], day3['Close']) - day3['Low']
+        # --- Doji ---
+        # Hindari noise candle kecil
+        valid_range_day3 = range_day3 > 0
 
         # Definisi Doji Umum (Body sangat tipis)
-        is_doji = body_3 <= (0.1 * range_3)
-
+        is_doji = (
+            valid_range_day3 and
+            (body_day3 <= 0.08 * range_day3)
+        )
+        
         # Doji Spesifik:
-        is_long_legged_doji = is_doji and (upper_wick_3 > 0.3 * range_3) and (lower_wick_3 > 0.3 * range_3)
-        is_gravestone_doji = is_doji and (upper_wick_3 > 0.7 * range_3) and (lower_wick_3 < 0.1 * range_3)
-        is_dragonfly_doji = is_doji and (lower_wick_3 > 0.7 * range_3) and (upper_wick_3 < 0.1 * range_3)
-
+        is_long_legged_doji = (
+            is_doji and
+            (upper_wick_day3 >= 0.35 * range_day3) and
+            (lower_wick_day3 >= 0.35 * range_day3)
+        )
+        
+        is_gravestone_doji = (
+            is_doji and
+            (upper_wick_day3 >= 0.7 * range_day3) and
+            (lower_wick_day3 <= 0.1 * range_day3)
+        )
+        
+        is_dragonfly_doji = (
+            is_doji and
+            (lower_wick_day3 >= 0.7 * range_day3) and
+            (upper_wick_day3 <= 0.1 * range_day3)
+        )
+        
+        # --- Inverted Hammer ---
         is_inverted_hammer = (
-            (upper_wick_3 >= 2 * body_3) and       # Ekor atas minimal 2x panjang body
-            (lower_wick_3 <= 0.1 * body_3) and     # Ekor bawah hampir tidak ada
-            (day3['Close'] < day3['SMA_50']) and   # KONTEKS: Harus di area bawah
-            (body_3 > 0)                           # Harus punya body sedikit (bukan Doji)
+            valid_range_day3 and
+            
+            # Body kecil
+            (body_day3 <= 0.3 * range_day3) and
+            
+            # Upper wick panjang
+            (upper_wick_day3 >= 2 * body_day3) and
+            
+            # Lower wick kecil relatif range
+            (lower_wick_day3 <= 0.15 * range_day3) and
+            
+            # Close dekat low
+            ((day3['Close'] - day3['Low']) <= 0.25 * range_day3) and
+            
+            # Konteks downtrend
+            (day3['SMA_20'] < day3['SMA_50'])
         )
 
+        # --- Hanging Man ---
         is_hanging_man = (
-            (lower_wick_3 >= 2 * body_3) and       # Ekor bawah minimal 2x panjang body
-            (upper_wick_3 <= 0.1 * body_3) and     # Ekor atas hampir tidak ada
-            (day3['Close'] > day3['SMA_50']) and   # KONTEKS: Harus di area puncak
-            (bull_2)                               # Biasanya didahului tren naik yang kuat
+            valid_range_day3 and
+            
+            # Body kecil relatif ke range
+            (body_day3 <= 0.3 * range_day3) and
+            
+            # Lower wick panjang
+            (lower_wick_day3 >= 2 * body_day3) and
+            
+            # Upper wick kecil relatif ke range
+            (upper_wick_day3 <= 0.15 * range_day3) and
+            
+            # Close dekat high
+            ((day3['High'] - day3['Close']) <= 0.25 * range_day3) and
+            
+            # Konteks uptrend lebih kuat
+            (day3['SMA_20'] > day3['SMA_50']) and
+            (bull_2)
         )
 
+        # --- Spinning Top ---
         is_spinning_top = (
-            (body_3 > 0.1 * range_3) and (body_3 <= 0.3 * range_3) and  # Body kecil tapi bukan Doji
-            (upper_wick_3 > body_3) and (lower_wick_3 > body_3)         # Ekor atas & bawah lebih panjang dari body
+            valid_range_day3 and
+            
+            # Body kecil tapi bukan doji
+            (0.1 * range_day3 < body_day3 <= 0.35 * range_day3) and
+            
+            # Kedua wick signifikan
+            (upper_wick_day3 >= 0.25 * range_day3) and
+            (lower_wick_day3 >= 0.25 * range_day3)
         )
 
         pola = "-"
