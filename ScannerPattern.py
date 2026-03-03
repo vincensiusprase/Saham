@@ -555,16 +555,59 @@ def analyze_stock(ticker):
             (day3['Close'] < mid_1)
         )
 
+        # --- HARAMI FOR INSIDE ---
+        body_top_1 = max(day1['Open'], day1['Close'])
+        body_bottom_1 = min(day1['Open'], day1['Close'])
+
+        body_top_2 = max(day2['Open'], day2['Close'])
+        body_bottom_2 = min(day2['Open'], day2['Close'])
+
+        # --- BULLISH HARAMI INSIDE ---
+        is_bull_harami_inside = (
+            # Downtrend context
+            (day1['SMA_20'] < day1['SMA_50']) and
+            
+            # Candle 2 bearish kuat
+            bear_1 and
+            (body_day1 >= 0.5 * range_day1) and
+            
+            # Candle 2 bullish kecil
+            bull_2 and
+            (body_day2 <= 0.6 * body_day1) and
+            
+            # Body inside
+            (body_top_2 <= body_top_1) and
+            (body_bottom_2 >= body_bottom_1)
+        )
+
+        # --- BEARISH HARAMI ---
+        is_bear_harami_inside = (
+            # Uptrend context
+            (day1['SMA_20'] > day1['SMA_50']) and
+            
+            # Candle 1 bullish kuat
+            bull_1 and
+            (body_day1 >= 0.5 * range_day1) and
+            
+            # Candle 2 bearish kecil
+            bear_2 and
+            (body_day2 <= 0.6 * body_day2) and
+            
+            # Body inside
+            (body_top_2 <= body_top_1) and
+            (body_bottom_2 >= body_bottom_1)
+        )
+
         # --- Three Inside Up (Harami + Konfirmasi Hijau) ---
         is_3_inside_up = (
-            is_bull_harami and                  # Menggunakan logika Harami ketat yang kita bahas tadi
+            is_bull_harami_inside and           # Menggunakan logika Harami ketat yang kita bahas tadi
             bull_3 and 
             (day3['Close'] > day1['High'])      # Hari ke-3 ditutup diatas High hari ke-1
         )
 
         # --- Three Inside Down (Harami + Konfirmasi Merah) ---
         is_3_inside_down = (
-            is_bear_harami and                  # Menggunakan logika Harami ketat yang kita bahas tadi
+            is_bear_harami_inside and           # Menggunakan logika Harami ketat yang kita bahas tadi
             bear_3 and 
             (day3['Close'] < day1['Low'])       # Hari ke-3 ditutup dibawah Low hari ke-1
         )
