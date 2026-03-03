@@ -8,7 +8,7 @@ import numpy as np
 import ta
 import gspread
 from gspread_dataframe import set_with_dataframe
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import warnings
 import json
 import os
@@ -279,7 +279,7 @@ def analyze_stock(ticker):
             "Skor TV": round(final_value, 2),
             "Rekomendasi TV": rec,
             "Pola Terdeteksi": pola,
-            "Waktu": datetime.now().strftime("%Y-%m-%d %H:%M")
+            "Waktu": datetime.now(timezone(timedelta(hours=7))).strftime("%Y-%m-%d %H:%M")
         }
     except Exception as e:
         print(f"Error pada {ticker}: {e}")
