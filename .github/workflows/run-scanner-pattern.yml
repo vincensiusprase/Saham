@@ -2,7 +2,6 @@ name: Run Market Scanner Pattern
 
 on:
   schedule:
-    - cron: "0 5 * * 1-5"    # 12:00 WIB (05:00 UTC) Senin–Jumat
     - cron: "0 10 * * 1-5"   # 17:00 WIB (10:00 UTC) Senin–Jumat
   workflow_dispatch:
 
