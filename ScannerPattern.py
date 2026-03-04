@@ -368,9 +368,9 @@ def analyze_stock(ticker):
 
         # --- BEARISH ENGULFING ---
         is_bear_engulfing = (
-            bull_2 and bear_3 and                         `# Kemarin Hijau, Hari ini Merah
+            bull_2 and bear_3 and                          # Kemarin Hijau, Hari ini Merah
             (day3['Open'] >= day2['Close']) and            # KETAT: Open hari ini di ATAS/SAMA Close kemarin (Gap Up)
-            (day3['Close'] < day2['Open']) and            `# Close hari ini di BAWAH Open kemarin
+            (day3['Close'] < day2['Open']) and             # Close hari ini di BAWAH Open kemarin
             (body_day3 > body_day2 * 1.08) and             # KETAT: Body hari ini minimal 8% lebih besar dari kemarin
             (day3['Close'] > day3['SMA_50'])               # KONTEKS: Harus muncul di area atas/Overbought
         )
