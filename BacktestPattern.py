@@ -550,9 +550,8 @@ def run_backtest(ticker, df_full, start_date, end_date):
 
         # ---- FILTER ENTRY CONDITIONS ----
         if sig['direction'] != "bullish":           continue
-        if sig['tier'] < 2:                         continue
+        if sig['tier'] = 3:                         continue
         if sig['pat_score'] <= 65:                  continue
-        if sig['sr_zone'] != "Support":             continue
         if not sig['vol_thrust']:                   continue
 
         # Entry di Open hari berikutnya
