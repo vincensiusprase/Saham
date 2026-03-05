@@ -2,7 +2,7 @@ name: Run Backtest Pattern
 
 on:
   schedule:
-    - cron: "0 10 * * 1-5"   # 17:00 WIB (10:00 UTC) Senin–Jumat
+    - cron: "0 12 * * 1-5"   # 19:00 WIB (12:00 UTC) Senin–Jumat   # 17:00 WIB (10:00 UTC) Senin–Jumat
   workflow_dispatch:
 
 jobs:
