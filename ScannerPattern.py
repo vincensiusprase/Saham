@@ -376,35 +376,28 @@ def analyze_stock(ticker):
         )
 
         # --- Piercing Line ---
-        # Kalkulasi Pembantu Piercing Line
-        penetration_ratio = (day3['Close'] - day2['Close']) / body_day2
-        is_strong_piercing = penetration_ratio >= 0.6
+        # ===== PENETRATION =====
+        body_bear = day2['Open'] - day2['Close']
+        penetration_ratio = (day3['Close'] - day2['Close']) / body_bear
         
-        # Syarat Piercing Line yang Diperketat:
+        # ===== PIERCING LINE =====
         is_piercing = (
-            (range_day2 > 0) and
-            (range_day3 > 0) and
-
-            # Konteks downtrend
+            # Downtrend context
             (day2['SMA_20'] < day2['SMA_50']) and
             
-            # Candle 2: Bearish kuat
+            # Candle 2 strong bearish
             bear_2 and
-            (body_day2 >= 0.6 * range_day2) and
+            (body_bear >= 0.6 * range_day2) and
             
-            # Candle 3: Bullish
+            # Candle 3 bullish
             bull_3 and
-            (body_day3 >= 0.5 * body_day2) and
-
-            # Gap down ringan (lebih realistis dari < Low)
+            
+            # Realistic gap
             (day3['Open'] <= day2['Close']) and
             
-            # Tutup di atas midpoint
-            (day3['Close'] > mid_point_day2) and
-            
-            # Tidak jadi bullish engulfing
-            (day3['Close'] < day2['Open']) and
-            (penetration_ratio >= 0.6)
+            # Core piercing condition
+            (penetration_ratio >= 0.5) and
+            (day3['Close'] < day2['Open'])  # not engulfing
         )
 
         # --- Hammer ---
@@ -489,6 +482,7 @@ def analyze_stock(ticker):
             
             # Candle 3 bullish kecil
             bull_3 and
+            (body_day3 >= 0.2 * range_day3) and
             (body_day3 <= 0.6 * body_day2) and
             
             # Body inside
@@ -693,18 +687,32 @@ def analyze_stock(ticker):
 
         # --- Tweezer Bottom ---
         is_tweezer_bottom = (
-            (day3['SMA_20'] < day3['SMA_50']) and         # Downtrend context
-            is_near(day2['Low'], day3['Low']) and         # Low hampir sama
-            bear_2 and bull_3 and                         # Struktur candle
-            (body_day3 >= 0.5 * range_day3)               # Candle kedua cukup kuat
+            (day3['SMA_20'] < day3['SMA_50']) and
+            
+            bear_2 and
+            (body_day2 >= 0.5 * range_day2) and   # candle sebelumnya kuat
+            
+            bull_3 and
+            (body_day3 >= 0.5 * range_day3) and   # konfirmasi kuat
+            
+            is_near(day2['Low'], day3['Low']) and
+            
+            (day3['Close'] > day2['Close'])       # optional confirmation
         )
 
         # --- Tweezer Top ---
-        is_tweezer_top = (
-            (day3['SMA_20'] > day3['SMA_50']) and        # Uptrend context
-            is_near(day2['High'], day3['High']) and      # High hampir sama
-            bull_2 and bear_3 and                        # Struktur candle 
-            (body_day3 >= 0.5 * range_day3)              # Konfirmasi kekuatan
+        is_tweezer_bottom = (
+            (day3['SMA_20'] > day3['SMA_50']) and
+            
+            bull_2 and
+            (body_day2 >= 0.5 * range_day2) and   # candle sebelumnya kuat
+            
+            bear_3 and
+            (body_day3 >= 0.5 * range_day3) and   # konfirmasi kuat
+            
+            is_near(day2['High'], day3['High']) and
+            
+            (day3['Close'] < day2['Close'])       # optional confirmation
         )
 
         
