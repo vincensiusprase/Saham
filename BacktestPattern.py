@@ -552,7 +552,6 @@ def run_backtest(ticker, df_full, start_date, end_date):
         if sig['direction'] != "bullish":           continue
         if sig['tier'] < 2:                         continue
         if sig['pat_score'] <= 65:                  continue
-        if sig['tv_rec'] not in ["Pembelian","Pembelian Kuat"]: continue
         if sig['sr_zone'] != "Support":             continue
         if not sig['vol_thrust']:                   continue
 
@@ -723,6 +722,7 @@ def simulate_portfolio(all_signals):
 
         portfolio.append({
             "Ticker"           : trade['ticker'],
+            "TV Rec"           : trade['tv_rec'],
             "Pola"             : trade['pola'],
             "Tier"             : trade['tier'],
             "Skor Pola"        : trade['pat_score'],
