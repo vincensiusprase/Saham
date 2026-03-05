@@ -1,4 +1,4 @@
-name: Run Market Scanner Pattern
+name: Run Market Scanner Pattern 2
 
 on:
   schedule:
