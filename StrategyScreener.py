@@ -317,26 +317,24 @@ def analyze(ticker, sector, ctx):
     close_now = float(df["Close"].iloc[-1])
     tgl = df.index[-1].strftime("%d-%b-%y")
 
+    # Pindahkan peringatan likuiditas ke Action
+    warning = " (⚠️ Sepi)" if adtv < 1.0 else ""
+    
     # Action Logic
     if cb["type"] == "ChBrkLE":
-        if cb["bars"] <= 1: action = "BUY NOW"
-        else: action = "HOLD"
+        if cb["bars"] <= 1: action = f"BUY NOW{warning}"
+        else: action = f"HOLD{warning}"
     else:
         action = "SELL / WAIT"
-
-    # Liquidity Filter (ADTV < 1 Miliar = Warning)
-    ticker_display = ticker.replace(".JK", "")
-    if adtv < 1.0:
-        ticker_display = f"⚠️ {ticker_display}"
 
     # Batas Jual (SL) = downBound[t-1]
     down = df["Low"].rolling(LENGTH).min().shift(1)
     sl_price = down.iloc[-1] if not pd.isna(down.iloc[-1]) else 0
 
     return {
-        "Ticker"              : ticker_display,
+        "Ticker"              : ticker, # <- Tetap mempertahankan .JK dan tanpa logo
         "Sektor"              : sector,
-        "Action"              : action,
+        "Action"              : action, # <- Rambu-rambu diletakkan di sini
         "Harga"               : int(close_now),
         "Batas Jual (SL)"     : int(sl_price),
         "ADTV (M)"            : adtv,
@@ -351,7 +349,6 @@ def analyze(ticker, sector, ctx):
         "Commodity Bullish %" : comm["pct"],
         "Commodity Context"   : comm["summary"],
     }
-
 
 # ── SECTOR ─────────────────────────────────────────────────────────────────
 def run_sector(sector, tickers, ctx):
