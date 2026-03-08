@@ -120,14 +120,14 @@ SECTOR_CONFIG = {
     ],
     "IDXNONCYC": [
         "UNVR.JK", "ICBP.JK", "INDF.JK", "MYOR.JK", "CPIN.JK",
-        "JPFA.JK", "ULTJ.JK", "ROTI.JK", "KLBF.JK", "GGRM.JK",
+        "JPFA.JK", "ULTJ.JK", "SOFA.JK", "KLBF.JK", "GGRM.JK",
     ],
     "IDXCYCLIC": [
         "MAPI.JK", "ACES.JK", "ERAA.JK", "LPPF.JK", "MNCN.JK",
         "SCMA.JK", "AUTO.JK", "GJTL.JK", "SMSM.JK", "FAST.JK",
     ],
     "IDXTECHNO": [
-        "GOTO.JK", "EMTK.JK", "BUKA.JK", "DCII.JK", "MTDL.JK",
+        "GOTO.JK", "CASH.JK", "BUKA.JK", "MSTI.JK", "MTDL.JK",
         "MLPT.JK", "MCAS.JK", "KREN.JK", "HDIT.JK", "NFCX.JK",
     ],
     "IDXHEALTH": [
