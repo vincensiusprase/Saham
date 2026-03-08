@@ -82,7 +82,8 @@ DOWNLOAD_DAYS = 300
 WIB           = timezone(timedelta(hours=7))
 
 # Jumlah candle lookback untuk mencari tanggal sinyal terakhir
-SIGNAL_LOOKBACK = 10   # cari sinyal dalam 10 candle terakhir
+# Harus sama dengan DOWNLOAD_DAYS agar mencari seluruh riwayat data
+SIGNAL_LOOKBACK = 300
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -107,15 +108,15 @@ SECTOR_CONFIG = {
     ],
     "IDXNONCYC": [
         "UNVR.JK","ICBP.JK","INDF.JK","MYOR.JK","CPIN.JK",
-        "JPFA.JK","ULTJ.JK","SOFA.JK","KLBF.JK","GGRM.JK",
+        "JPFA.JK","ULTJ.JK","ROTI.JK","KLBF.JK","GGRM.JK",
     ],
     "IDXCYCLIC": [
         "MAPI.JK","ACES.JK","ERAA.JK","LPPF.JK","MNCN.JK",
         "SCMA.JK","AUTO.JK","GJTL.JK","SMSM.JK","FAST.JK",
     ],
     "IDXTECHNO": [
-        "GOTO.JK","EMTK.JK","BUKA.JK","MSTI.JK","MTDL.JK",
-        "MLPT.JK","CASH.JK","KREN.JK","HDIT.JK","NFCX.JK",
+        "GOTO.JK","EMTK.JK","BUKA.JK","DCII.JK","MTDL.JK",
+        "MLPT.JK","MCAS.JK","KREN.JK","HDIT.JK","NFCX.JK",
     ],
     "IDXHEALTH": [
         "KLBF.JK","SIDO.JK","KAEF.JK","TSPC.JK","MIKA.JK",
@@ -224,17 +225,22 @@ def calculate_trade_params(price: float, atr: float, direction: str, tier: int) 
     rr     = round(reward / risk, 2) if risk > 0 else 0
     return {"SL":int(sl), "TP1":int(tp1), "TP2":int(tp2), "RR":rr}
 
-def fmt_signal_date(date_val, days_ago: int, signal_label: str) -> str:
-    """Format: 'ChBrkLE 06-Mar (2h lalu)'"""
+def fmt_signal_date(date_val, bars_ago: int, signal_label: str) -> str:
+    """
+    Format: 'ChBrkLE 19-Feb-26 (14 bar lalu)'
+    Menggunakan tahun 2-digit dan trading bars (bukan calendar days).
+    """
     if date_val is None:
         return "-"
     try:
-        if isinstance(date_val, str):
-            d = pd.to_datetime(date_val)
+        d = pd.Timestamp(date_val)
+        date_str = d.strftime("%d-%b-%y")   # contoh: 19-Feb-26
+        if bars_ago == 0:
+            ago_str = "hari ini"
+        elif bars_ago == 1:
+            ago_str = "1 bar lalu"
         else:
-            d = pd.Timestamp(date_val)
-        date_str = d.strftime("%d-%b")
-        ago_str  = f"{days_ago}h lalu" if days_ago > 0 else "hari ini"
+            ago_str = f"{bars_ago} bar lalu"
         return f"{signal_label} {date_str} ({ago_str})"
     except Exception:
         return signal_label
@@ -390,28 +396,23 @@ def calc_supertrend(df: pd.DataFrame, atr_len: int = ST_ATR_LEN, factor: float =
 def find_last_signal_date(signal_series: pd.Series, dates: pd.Series,
                           lookback: int = SIGNAL_LOOKBACK) -> tuple:
     """
-    signal_series : Boolean Series (True = sinyal aktif pada candle tsb)
-    dates         : Series tanggal/index
-    Returns       : (date_val, days_ago) atau (None, None) jika tidak ada sinyal
+    Cari kapan TERAKHIR kali sinyal = True, dari candle paling baru ke belakang.
+    Menggunakan jumlah trading bar (bukan calendar days) untuk "N hari lalu".
+
+    Returns: (date_val, trading_bars_ago) atau (None, None)
     """
-    # Cek dalam lookback candle terakhir
-    window = signal_series.iloc[-(lookback + 1):-1]  # exclude candle hari ini dari search
-    dates_window = dates.iloc[-(lookback + 1):-1]
+    # Ambil window lookback dari seluruh data (exclude candle hari ini untuk signal history)
+    n = min(lookback, len(signal_series))
+    window_signals = signal_series.iloc[-n:]
+    window_dates   = dates.iloc[-n:]
 
-    # Tambahkan candle hari ini juga
-    all_signals = signal_series.iloc[-lookback:]
-    all_dates   = dates.iloc[-lookback:]
-
-    # Cari dari yang paling baru
-    for i in range(len(all_signals) - 1, -1, -1):
-        if all_signals.iloc[i]:
-            signal_date = all_dates.iloc[i]
-            today       = pd.Timestamp.now()
-            try:
-                days_ago = (today - pd.Timestamp(signal_date)).days
-            except Exception:
-                days_ago = 0
-            return signal_date, days_ago
+    # Cari dari indeks paling akhir (candle terbaru) ke belakang
+    for i in range(len(window_signals) - 1, -1, -1):
+        if bool(window_signals.iloc[i]):
+            signal_date = window_dates.iloc[i]
+            # Hitung berapa TRADING BAR yang lalu (bukan calendar days)
+            bars_ago = len(window_signals) - 1 - i
+            return signal_date, bars_ago
 
     return None, None
 
@@ -421,52 +422,60 @@ def find_last_signal_date(signal_series: pd.Series, dates: pd.Series,
 # ══════════════════════════════════════════════════════════════════
 def get_channel_breakout_history(df: pd.DataFrame) -> dict:
     """
-    Hitung Upper/Lower Channel untuk setiap bar, cari kapan terakhir
-    ChBrkLE (Long Entry) dan ChBrkSE (Short Entry) terjadi.
+    ChBrkLE = High > Upper Channel (Highest High 5 bar, shift 1)
+    ChBrkSE = Low  < Lower Channel (Lowest Low  5 bar, shift 1)
 
-    ChBrkLE = High hari ini > Upper Channel kemarin
-    ChBrkSE = Low hari ini < Lower Channel kemarin
+    Tampilkan sinyal yang paling TERAKHIR terjadi (LE atau SE, mana lebih baru).
     """
     upper_channel = df["High"].rolling(CHANNEL_LENGTH).max().shift(1)
     lower_channel = df["Low"].rolling(CHANNEL_LENGTH).min().shift(1)
 
-    le_signal = df["High"] > upper_channel   # Long Entry
-    se_signal = df["Low"]  < lower_channel   # Short Entry
+    le_signal = df["High"] > upper_channel
+    se_signal = df["Low"]  < lower_channel
 
-    # Tanggal (ambil dari kolom Date/index)
     if "Date" in df.columns:
         dates = df["Date"]
     else:
         dates = pd.Series(df.index, index=df.index)
 
-    le_date, le_days = find_last_signal_date(le_signal, dates)
-    se_date, se_days = find_last_signal_date(se_signal, dates)
+    le_date, le_bars = find_last_signal_date(le_signal, dates)
+    se_date, se_bars = find_last_signal_date(se_signal, dates)
 
-    # Sinyal hari ini (candle terakhir)
     today_le = bool(le_signal.iloc[-1])
     today_se = bool(se_signal.iloc[-1])
 
-    # Tentukan label
-    if le_date is not None:
-        ch_label = fmt_signal_date(le_date, le_days, "ChBrkLE")
-        ch_days  = le_days
+    # Tampilkan sinyal yang LEBIH BARU (bars_ago lebih kecil = lebih baru)
+    if le_date is not None and se_date is not None:
+        if le_bars <= se_bars:   # LE lebih baru atau sama
+            ch_label = fmt_signal_date(le_date, le_bars, "ChBrkLE")
+            ch_bars  = le_bars
+            ch_type  = "ChBrkLE"
+        else:                    # SE lebih baru
+            ch_label = fmt_signal_date(se_date, se_bars, "ChBrkSE")
+            ch_bars  = se_bars
+            ch_type  = "ChBrkSE"
+    elif le_date is not None:
+        ch_label = fmt_signal_date(le_date, le_bars, "ChBrkLE")
+        ch_bars  = le_bars
         ch_type  = "ChBrkLE"
     elif se_date is not None:
-        ch_label = fmt_signal_date(se_date, se_days, "ChBrkSE")
-        ch_days  = se_days
+        ch_label = fmt_signal_date(se_date, se_bars, "ChBrkSE")
+        ch_bars  = se_bars
         ch_type  = "ChBrkSE"
     else:
         ch_label = "-"
-        ch_days  = 999
+        ch_bars  = 999
         ch_type  = "-"
 
     return {
         "ch_breakout_today": today_le,
         "ch_label"         : ch_label,
-        "ch_days_ago"      : ch_days,
+        "ch_days_ago"      : ch_bars,
         "ch_type"          : ch_type,
         "le_active"        : le_date is not None,
         "se_active"        : se_date is not None,
+        "le_bars"          : le_bars if le_date is not None else 999,
+        "se_bars"          : se_bars if se_date is not None else 999,
     }
 
 
@@ -521,19 +530,28 @@ def check_bb_strategy(df: pd.DataFrame) -> dict:
         today_le = bool(cross_up.iloc[-1])
         today_se = bool(cross_down.iloc[-1])
 
-        # Label dengan tanggal
-        if le_date is not None:
+        # Label: tampilkan sinyal TERBARU (LE atau SE mana lebih baru)
+        if le_date is not None and se_date is not None:
+            if le_days <= se_days:
+                bb_label = fmt_signal_date(le_date, le_days, "BBBrkLE")
+                bb_days  = le_days
+                bb_ok    = True
+            else:
+                bb_label = fmt_signal_date(se_date, se_days, "BBBrkSE")
+                bb_days  = se_days
+                bb_ok    = False   # SE bukan long signal
+        elif le_date is not None:
             bb_label = fmt_signal_date(le_date, le_days, "BBBrkLE")
             bb_days  = le_days
+            bb_ok    = True
         elif se_date is not None:
             bb_label = fmt_signal_date(se_date, se_days, "BBBrkSE")
             bb_days  = se_days
+            bb_ok    = False
         else:
             bb_label = "-"
             bb_days  = 999
-
-        # Untuk scoring: aktif jika sinyal LE ada dalam SIGNAL_LOOKBACK bar
-        bb_ok = le_date is not None
+            bb_ok    = False
 
         return {
             "bb_ok"      : bb_ok,
@@ -577,33 +595,34 @@ def check_supertrend_strategy(df: pd.DataFrame) -> dict:
         se_date, se_days = find_last_signal_date(flip_se, dates)
 
         dir_now    = int(direction.iloc[-1])
-        st_in_long = dir_now == -1   # Supertrend di bawah harga = bullish
+        st_in_long = dir_now == -1
 
-        # Label
-        if le_date is not None:
-            st_label = fmt_signal_date(le_date, le_days, "STBrkLE")
-            st_days  = le_days
+        # Tampilkan flip signal yang TERBARU
+        if le_date is not None and se_date is not None:
+            if le_bars <= se_bars:
+                st_label = fmt_signal_date(le_date, le_bars, "STBrkLE")
+                st_bars  = le_bars
+            else:
+                st_label = fmt_signal_date(se_date, se_bars, "STBrkSE")
+                st_bars  = se_bars
+        elif le_date is not None:
+            st_label = fmt_signal_date(le_date, le_bars, "STBrkLE")
+            st_bars  = le_bars
         elif se_date is not None:
-            st_label = fmt_signal_date(se_date, se_days, "STBrkSE")
-            st_days  = se_days
+            st_label = fmt_signal_date(se_date, se_bars, "STBrkSE")
+            st_bars  = se_bars
         else:
             st_label = "STBrkSE" if not st_in_long else "STBrkLE"
-            st_days  = 999
+            st_bars  = 999
 
-        # Status ringkas
-        if dir_now == -1:
-            st_status = "🟢 Bullish (Long)"
-        else:
-            st_status = "🔴 Bearish (Short)"
-
-        # Untuk scoring: in long = bullish kondisi terpenuhi
-        st_ok = st_in_long
+        st_status = "🟢 Bullish (Long)" if dir_now == -1 else "🔴 Bearish (Short)"
+        st_ok     = st_in_long
 
         return {
-            "st_ok"      : st_ok,
-            "st_label"   : st_label,
-            "st_days_ago": st_days,
-            "st_status"  : st_status,
+            "st_ok"       : st_ok,
+            "st_label"    : st_label,
+            "st_days_ago" : st_bars,
+            "st_status"   : st_status,
             "st_direction": dir_now,
         }
 
@@ -649,24 +668,33 @@ def check_rsi_strategy(df: pd.DataFrame) -> dict:
         else:
             rsi_zone = "Neutral"
 
-        # Label
-        if le_date is not None:
-            rsi_label = fmt_signal_date(le_date, le_days, "RSIBrkLE")
-            rsi_days  = le_days
+        # Tampilkan sinyal TERBARU (LE atau SE mana lebih baru)
+        if le_date is not None and se_date is not None:
+            if le_bars <= se_bars:
+                rsi_label = fmt_signal_date(le_date, le_bars, "RSIBrkLE")
+                rsi_bars  = le_bars
+                rsi_ok    = True
+            else:
+                rsi_label = fmt_signal_date(se_date, se_bars, "RSIBrkSE")
+                rsi_bars  = se_bars
+                rsi_ok    = False
+        elif le_date is not None:
+            rsi_label = fmt_signal_date(le_date, le_bars, "RSIBrkLE")
+            rsi_bars  = le_bars
+            rsi_ok    = True
         elif se_date is not None:
-            rsi_label = fmt_signal_date(se_date, se_days, "RSIBrkSE")
-            rsi_days  = se_days
+            rsi_label = fmt_signal_date(se_date, se_bars, "RSIBrkSE")
+            rsi_bars  = se_bars
+            rsi_ok    = False
         else:
             rsi_label = f"RSI {rsi_now:.0f} ({rsi_zone})"
-            rsi_days  = 999
-
-        # Untuk scoring: sinyal LE ada dalam lookback
-        rsi_ok = le_date is not None
+            rsi_bars  = 999
+            rsi_ok    = False
 
         return {
             "rsi_ok"      : rsi_ok,
             "rsi_label"   : rsi_label,
-            "rsi_days_ago": rsi_days,
+            "rsi_days_ago": rsi_bars,
             "rsi_zone"    : rsi_zone,
             "rsi_value"   : round(rsi_now, 1),
         }
