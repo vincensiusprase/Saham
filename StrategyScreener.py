@@ -157,48 +157,62 @@ def get_ohlcv(ticker, days=DOWNLOAD_DAYS):
     return df
 
 
-# ── CHANNEL BREAKOUT ───────────────────────────────────────────────────────
+# ── CHANNEL BREAKOUT (PERBAIKAN AKURASI) ───────────────────────────────────
 def calc_cb(df):
     """
-    Pine Script exact:
-      upBound[t]   = ta.highest(high, length)[t]  = rolling(length).max() di bar t
-      downBound[t] = ta.lowest(low,  length)[t]
-
-      ChBrkLE[t] = high[t] > upBound[t-1]   → pandas: high > rolling.max().shift(1)
-      ChBrkSE[t] = low[t]  < downBound[t-1] → pandas: low  < rolling.min().shift(1)
+    Perbaikan akurasi untuk meniru `strategy.entry` di Pine Script yang bersifat
+    stateful (menahan posisi tanpa pyramiding).
     """
     up   = df["High"].rolling(LENGTH).max().shift(1)
     down = df["Low"].rolling(LENGTH).min().shift(1)
 
-    le = df["High"] > up
-    se = df["Low"]  < down
+    # 1. Identifikasi kondisi saat harga menembus channel
+    # Menggunakan > karena equivalen dengan `stop=upBound + syminfo.mintick`
+    le_condition = df["High"] > up
+    se_condition = df["Low"]  < down
 
-    # Cari sinyal terakhir (dari bar terbaru ke belakang, seluruh history)
-    def last(sig):
-        arr = sig.values
+    # 2. Buat state posisi untuk meniru sifat Holding Strategy
+    df_sig = pd.DataFrame(index=df.index)
+    
+    conditions = [le_condition, se_condition]
+    choices = [1, -1] # 1 untuk Long, -1 untuk Short
+    
+    # Isi state 1 atau -1 jika breakout, jika tidak biarkan NaN
+    df_sig['state'] = np.select(conditions, choices, default=np.nan)
+    
+    # ffill() mengisi NaN dengan nilai state sebelumnya (menahan posisi)
+    df_sig['state'] = df_sig['state'].ffill()
+
+    # 3. Sinyal valid HANYA terjadi saat pergantian tren (state berubah)
+    df_sig['entry_long']  = (df_sig['state'] == 1)  & (df_sig['state'].shift(1) != 1)
+    df_sig['entry_short'] = (df_sig['state'] == -1) & (df_sig['state'].shift(1) != -1)
+
+    # 4. Cari kapan terakhir kali sinyal valid tersebut muncul
+    def get_last_signal(series):
+        arr = series.values
         idx = df.index
         for i in range(len(arr)-1, -1, -1):
             if arr[i]:
-                bars = len(arr)-1-i
+                bars = len(arr) - 1 - i
                 return idx[i], bars
         return None, None
 
-    le_dt, le_b = last(le)
-    se_dt, se_b = last(se)
+    le_dt, le_b = get_last_signal(df_sig['entry_long'])
+    se_dt, se_b = get_last_signal(df_sig['entry_short'])
 
     def fmt(dt, bars, lbl):
         if dt is None: return "-"
-        ago = "hari ini" if bars==0 else f"{bars} bar lalu"
+        ago = "hari ini" if bars == 0 else f"{bars} bar lalu"
         return f"{lbl} {pd.Timestamp(dt).strftime('%d-%b-%y')} ({ago})"
 
     lb = le_b if le_b is not None else 999999
     sb = se_b if se_b is not None else 999999
 
+    # Mengembalikan sinyal yang paling baru terjadi
     if lb <= sb:
-        return {"label": fmt(le_dt,le_b,"ChBrkLE"), "type":"ChBrkLE", "bars":lb}
+        return {"label": fmt(le_dt, lb, "ChBrkLE"), "type": "ChBrkLE", "bars": lb}
     else:
-        return {"label": fmt(se_dt,se_b,"ChBrkSE"), "type":"ChBrkSE", "bars":sb}
-
+        return {"label": fmt(se_dt, sb, "ChBrkSE"), "type": "ChBrkSE", "bars": sb}
 
 # ── TV SCORE ───────────────────────────────────────────────────────────────
 def calc_tv(df):
