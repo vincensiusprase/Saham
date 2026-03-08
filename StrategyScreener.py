@@ -1,18 +1,11 @@
 """
-IHSG Channel Breakout Screener v3.0
-====================================
-Pine Script (exact):
+IHSG Channel Breakout Screener v3.5 (Complete Trading System)
+=============================================================
+Pine Script (exact stateful emulation):
   upBound   = ta.highest(high, length)
   downBound = ta.lowest(low, length)
   ChBrkLE : high[t] > upBound[t-1]
   ChBrkSE : low[t]  < downBound[t-1]
-
-Kunci akurasi:
-  - auto_adjust=False  : harga tidak disesuaikan, sama dengan TradingView
-  - ta.highest(high,5)[t-1] = rolling(5).max().shift(1) dalam pandas
-
-Output: Ticker | Sektor | Harga | Tgl Data | Channel Breakout
-        Skor TV | Rek TV | Commodity Bullish % | Commodity Context
 """
 
 import os, sys, json, time, warnings
@@ -49,7 +42,7 @@ SECTORS = {
                     "JPFA.JK","ULTJ.JK","SOFA.JK","KLBF.JK","GGRM.JK"],
     "IDXCYCLIC"  : ["MAPI.JK","ACES.JK","ERAA.JK","LPPF.JK","MNCN.JK",
                     "SCMA.JK","AUTO.JK","GJTL.JK","SMSM.JK","FAST.JK"],
-    "IDXTECHNO"  : ["GOTO.JK","EMTK.JK","BUKA.JK","DCII.JK","MTDL.JK",
+    "IDXTECHNO"  : ["GOTO.JK","EMTK.JK","BUKA.JK","MSTI.JK","MTDL.JK",
                     "MLPT.JK","CASH.JK","KREN.JK","HDIT.JK","NFCX.JK"],
     "IDXHEALTH"  : ["KLBF.JK","SIDO.JK","KAEF.JK","TSPC.JK","MIKA.JK",
                     "SILO.JK","HEAL.JK","MERK.JK","DVLA.JK","PRDA.JK"],
@@ -84,10 +77,10 @@ FALLBACK = {"Nickel":"DBB","Aluminium":"DBB","Zinc":"DBB",
             "Tin":"JJT","Coal":"ARCH","CPO":"POW.L"}
 
 DISPLAY_COLS = [
-    "Ticker","Sektor","Harga","Tgl Data",
-    "Channel Breakout",
-    "Skor TV","Rek TV",
-    "Commodity Bullish %","Commodity Context",
+    "Ticker", "Sektor", "Action", "Harga", "Batas Jual (SL)", 
+    "Channel Breakout", "Tgl Breakout", "Skor Tambahan", "ADTV (M)",
+    "Skor TV", "Rek TV",
+    "Commodity Bullish %", "Commodity Context",
 ]
 
 
@@ -117,11 +110,6 @@ def gsheet(name):
 
 # ── DATA DOWNLOAD ──────────────────────────────────────────────────────────
 def get_ohlcv(ticker, days=DOWNLOAD_DAYS):
-    """
-    auto_adjust=False: harga asli tanpa adjustment.
-    TradingView default juga menampilkan harga asli (unadjusted) kecuali
-    user aktifkan 'Adjust data for dividends and splits'.
-    """
     end   = datetime.today()
     start = end - timedelta(days=days)
     try:
@@ -142,11 +130,10 @@ def get_ohlcv(ticker, days=DOWNLOAD_DAYS):
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = [c[0] for c in df.columns]
 
-    # Pastikan Close ada (bisa pakai Adj Close sebagai fallback)
     if "Close" not in df.columns and "Adj Close" in df.columns:
         df["Close"] = df["Adj Close"]
 
-    needed = ["High", "Low", "Close"]
+    needed = ["High", "Low", "Close", "Volume"]
     if not all(c in df.columns for c in needed):
         return None
 
@@ -159,35 +146,22 @@ def get_ohlcv(ticker, days=DOWNLOAD_DAYS):
 
 # ── CHANNEL BREAKOUT (PERBAIKAN AKURASI) ───────────────────────────────────
 def calc_cb(df):
-    """
-    Perbaikan akurasi untuk meniru `strategy.entry` di Pine Script yang bersifat
-    stateful (menahan posisi tanpa pyramiding).
-    """
     up   = df["High"].rolling(LENGTH).max().shift(1)
     down = df["Low"].rolling(LENGTH).min().shift(1)
 
-    # 1. Identifikasi kondisi saat harga menembus channel
-    # Menggunakan > karena equivalen dengan `stop=upBound + syminfo.mintick`
     le_condition = df["High"] > up
     se_condition = df["Low"]  < down
 
-    # 2. Buat state posisi untuk meniru sifat Holding Strategy
     df_sig = pd.DataFrame(index=df.index)
-    
     conditions = [le_condition, se_condition]
-    choices = [1, -1] # 1 untuk Long, -1 untuk Short
+    choices = [1, -1] 
     
-    # Isi state 1 atau -1 jika breakout, jika tidak biarkan NaN
     df_sig['state'] = np.select(conditions, choices, default=np.nan)
-    
-    # ffill() mengisi NaN dengan nilai state sebelumnya (menahan posisi)
     df_sig['state'] = df_sig['state'].ffill()
 
-    # 3. Sinyal valid HANYA terjadi saat pergantian tren (state berubah)
     df_sig['entry_long']  = (df_sig['state'] == 1)  & (df_sig['state'].shift(1) != 1)
     df_sig['entry_short'] = (df_sig['state'] == -1) & (df_sig['state'].shift(1) != -1)
 
-    # 4. Cari kapan terakhir kali sinyal valid tersebut muncul
     def get_last_signal(series):
         arr = series.values
         idx = df.index
@@ -200,19 +174,52 @@ def calc_cb(df):
     le_dt, le_b = get_last_signal(df_sig['entry_long'])
     se_dt, se_b = get_last_signal(df_sig['entry_short'])
 
-    def fmt(dt, bars, lbl):
-        if dt is None: return "-"
+    def fmt_label(bars, lbl):
         ago = "hari ini" if bars == 0 else f"{bars} bar lalu"
-        return f"{lbl} {pd.Timestamp(dt).strftime('%d-%b-%y')} ({ago})"
+        return f"{lbl} ({ago})"
+
+    def fmt_date(dt):
+        if dt is None: return "-"
+        return pd.Timestamp(dt).strftime('%d-%b-%y')
 
     lb = le_b if le_b is not None else 999999
     sb = se_b if se_b is not None else 999999
 
-    # Mengembalikan sinyal yang paling baru terjadi
     if lb <= sb:
-        return {"label": fmt(le_dt, lb, "ChBrkLE"), "type": "ChBrkLE", "bars": lb}
+        return {"label": fmt_label(lb, "ChBrkLE"), "date": fmt_date(le_dt), "type": "ChBrkLE", "bars": lb}
     else:
-        return {"label": fmt(se_dt, sb, "ChBrkSE"), "type": "ChBrkSE", "bars": sb}
+        return {"label": fmt_label(sb, "ChBrkSE"), "date": fmt_date(se_dt), "type": "ChBrkSE", "bars": sb}
+
+
+# ── CUSTOM SCORE & ADTV ────────────────────────────────────────────────────
+def calc_custom_score(df):
+    score = 0
+    c = df["Close"]
+    v = df["Volume"]
+    tv = c * v  
+    
+    tv_ma20 = tv.rolling(20).mean()
+    v_ma20 = v.rolling(20).mean()
+    
+    adtv_1m = 0
+    if len(tv_ma20) > 0 and pd.notna(tv_ma20.iloc[-1]):
+        adtv_1m = tv_ma20.iloc[-1] / 1_000_000_000  # Konversi ke Miliar
+        
+    if tv.iloc[-1] > tv_ma20.iloc[-1]: score += 1
+    if v.iloc[-1] > v_ma20.iloc[-1]: score += 1
+        
+    if len(df) >= 52:
+        tenkan = (df["High"].rolling(9).max() + df["Low"].rolling(9).min()) / 2
+        kijun = (df["High"].rolling(26).max() + df["Low"].rolling(26).min()) / 2
+        span_a = ((tenkan + kijun) / 2).shift(26)
+        span_b = ((df["High"].rolling(52).max() + df["Low"].rolling(52).min()) / 2).shift(26)
+        cloud_top = pd.concat([span_a, span_b], axis=1).max(axis=1)
+        
+        if pd.notna(cloud_top.iloc[-1]) and c.iloc[-1] > cloud_top.iloc[-1]:
+            score += 2
+            
+    return score, round(adtv_1m, 2)
+
 
 # ── TV SCORE ───────────────────────────────────────────────────────────────
 def calc_tv(df):
@@ -287,7 +294,6 @@ def fetch_commodities():
             print(f"  ❌ {name}")
     return ctx
 
-
 def comm_sector(sector, ctx):
     rel=[(n,d["up"]) for n,d in ctx.items()
          if d.get("up") is not None and ("ALL" in d["s"] or sector in d["s"])]
@@ -304,24 +310,46 @@ def analyze(ticker, sector, ctx):
     if df is None or len(df) < LENGTH+2:
         print(f"    [skip] {ticker}"); return None
 
-    cb        = calc_cb(df)
-    tvs, tvl  = calc_tv(df)
-    comm      = comm_sector(sector, ctx)
+    cb = calc_cb(df)
+    custom_score, adtv = calc_custom_score(df)
+    tvs, tvl = calc_tv(df)
+    comm = comm_sector(sector, ctx)
     close_now = float(df["Close"].iloc[-1])
-    tgl       = df.index[-1].strftime("%d-%b-%y")
+    tgl = df.index[-1].strftime("%d-%b-%y")
+
+    # Action Logic
+    if cb["type"] == "ChBrkLE":
+        if cb["bars"] <= 1: action = "BUY NOW"
+        else: action = "HOLD"
+    else:
+        action = "SELL / WAIT"
+
+    # Liquidity Filter (ADTV < 1 Miliar = Warning)
+    ticker_display = ticker.replace(".JK", "")
+    if adtv < 1.0:
+        ticker_display = f"⚠️ {ticker_display}"
+
+    # Batas Jual (SL) = downBound[t-1]
+    down = df["Low"].rolling(LENGTH).min().shift(1)
+    sl_price = down.iloc[-1] if not pd.isna(down.iloc[-1]) else 0
 
     return {
-        "Ticker"             : ticker.replace(".JK",""),
-        "Sektor"             : sector,
-        "Harga"              : int(close_now),
-        "Tgl Data"           : tgl,
-        "Channel Breakout"   : cb["label"],
-        "_type"              : cb["type"],
-        "_bars"              : cb["bars"],
-        "Skor TV"            : tvs,
-        "Rek TV"             : tvl,
-        "Commodity Bullish %": comm["pct"],
-        "Commodity Context"  : comm["summary"],
+        "Ticker"              : ticker_display,
+        "Sektor"              : sector,
+        "Action"              : action,
+        "Harga"               : int(close_now),
+        "Batas Jual (SL)"     : int(sl_price),
+        "ADTV (M)"            : adtv,
+        "Tgl Data"            : tgl,
+        "Channel Breakout"    : cb["label"],
+        "Tgl Breakout"        : cb["date"],
+        "Skor Tambahan"       : custom_score,
+        "_type"               : cb["type"],
+        "_bars"               : cb["bars"],
+        "Skor TV"             : tvs,
+        "Rek TV"              : tvl,
+        "Commodity Bullish %" : comm["pct"],
+        "Commodity Context"   : comm["summary"],
     }
 
 
@@ -363,7 +391,6 @@ def upload_sector(sector, df, ctx):
         print(f"  ✅ {sector}: {len(df)} rows")
     except Exception as e: print(f"  ❌ {sector}: {e}")
 
-
 def upload_summary(all_rows, ctx):
     print(f"\n📤 Summary → {SUMMARY_SHEET}")
     ws=gsheet(SUMMARY_SHEET)
@@ -372,7 +399,7 @@ def upload_summary(all_rows, ctx):
         ws.clear()
         ts=datetime.now(WIB).strftime("%Y-%m-%d %H:%M WIB")
         ws.update("A1",[[
-            f"🔍 IHSG Channel Breakout Screener v3.0 — {ts}","","",
+            f"🔍 IHSG Channel Breakout Screener v3.5 — {ts}","","",
             f"high>ta.highest(high,{LENGTH})[prev]→ChBrkLE | "
             f"low<ta.lowest(low,{LENGTH})[prev]→ChBrkSE | auto_adjust=False"]])
 
@@ -392,6 +419,7 @@ def upload_summary(all_rows, ctx):
 
         df["_le"]=(df.get("_type","")=="ChBrkLE").astype(int)
         df["_b"]=pd.to_numeric(df.get("_bars",999999),errors="coerce").fillna(999999)
+        # Sort by: Long breakout first, shortest bars ago first, highest score TV
         df=df.sort_values(["_le","_b","Skor TV"],ascending=[False,True,False])
         df=df.drop(columns=["_le","_b","_type","_bars"],errors="ignore").reset_index(drop=True)
 
@@ -408,7 +436,7 @@ def upload_summary(all_rows, ctx):
 # ── MAIN ───────────────────────────────────────────────────────────────────
 def main():
     ts=datetime.now(WIB).strftime("%Y-%m-%d %H:%M WIB")
-    print(f"\n{'═'*60}\n  IHSG Channel Breakout Screener v3.0   {ts}")
+    print(f"\n{'═'*60}\n  IHSG Channel Breakout Screener v3.5   {ts}")
     print(f"  Length={LENGTH} | auto_adjust=False | {DOWNLOAD_DAYS}d history")
     print(f"{'═'*60}\n")
 
