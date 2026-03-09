@@ -17,7 +17,7 @@ from google.oauth2.service_account import Credentials
 warnings.filterwarnings("ignore")
 
 # ── CONFIG ─────────────────────────────────────────────────────────────────
-SPREADSHEET_ID  = "1FVBXyEEOXDVJb-IJ61aNJweNr4Yn7OilpJwt8HBlAy4"
+SPREADSHEET_ID  = "1qhEZkfdtEGDEA5tWTVCeOahOXDso3H4O7B69xkOREDA"
 SUMMARY_SHEET   = "SCREENER"
 SERVICE_ACCOUNT = "service_account.json"
 LENGTH          = 20  # Menggantikan ATR_LENGTH & FACTOR
