@@ -97,27 +97,18 @@ def gsheet(name):
 
 # ── DATA DOWNLOAD ──────────────────────────────────────────────────────────
 def get_ohlcv(ticker, days=DOWNLOAD_DAYS):
-
-    end   = datetime.today()
-
+    # PERBAIKAN: Menambah 1 hari agar yfinance mendownload hari ini (exclusive batas akhirnya)
+    end   = datetime.today() + timedelta(days=1)
     start = end - timedelta(days=days)
 
     try:
-
         df = yf.download(
-
             ticker,
-
             start=start.strftime("%Y-%m-%d"),
-
             end=end.strftime("%Y-%m-%d"),
-
             interval="1d",
-
             progress=False,
-
             auto_adjust=False,
-
         )
     except Exception as e:
         return None
@@ -235,14 +226,14 @@ def calc_supertrend(df, period=ATR_LENGTH, multiplier=FACTOR):
 
     def fmt_date(dt):
         if dt is None: return "-"
-        return pd.Timestamp(dt).strftime('%d-%b-%y')
+        # PERBAIKAN: Menambah 1 hari ke tampilan tanggal Breakout
+        return (pd.Timestamp(dt) + pd.Timedelta(days=1)).strftime('%d-%b-%y')
 
     lb = le_b if le_b is not None else 999999
     sb = se_b if se_b is not None else 999999
     
     curr_sl = float(df_sig['sl_price'].iloc[-1])
 
-    # ===== PERUBAHAN LABEL SIGNAL =====
     if lb <= sb:
         return {"label": fmt_label(lb, "My Long Entry Id"), "date": fmt_date(le_dt), "type": "Supertrend Long", "bars": lb, "sl": curr_sl}
     else:
@@ -440,7 +431,6 @@ def analyze(ticker, sector, ctx):
 
     strat_cat = get_strategy_category(sector, close_now, adtv)
 
-    # ===== PERUBAHAN ACTION LOGIC =====
     warning = " (⚠️ Sepi)" if adtv < 1.0 else ""
     if st["type"] == "Supertrend Long":
         action = f"My Long{warning}"   # Untuk entry/simpan
@@ -568,7 +558,6 @@ def main():
     print(f"\n{'═'*60}")
     print(f"  Total           : {len(df_f)}")
     
-    # ===== PERUBAHAN PRINT SUMMARY LOG =====
     print(f"  Supertrend Long : {df_f['Supertrend Signal'].str.contains('My Long Entry Id',na=False).sum()}")
     print(f"  Supertrend Short: {df_f['Supertrend Signal'].str.contains('My Short Entry Id',na=False).sum()}")
     
