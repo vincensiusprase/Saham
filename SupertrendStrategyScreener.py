@@ -1,5 +1,5 @@
 """
-IHSG Supertrend Screener v4.0 (Complete Trading System)
+IHSG Supertrend Screener v4.0 (Complete Trading System - Trial 10 Tickers)
 =============================================================
 Pine Script (exact stateful emulation):
   ta.supertrend(factor, atrPeriod)
@@ -28,106 +28,21 @@ FACTOR          = 3.0
 DOWNLOAD_DAYS   = 365
 WIB             = timezone(timedelta(hours=7))
 
-# ── SECTORS ────────────────────────────────────────────────────────────────
+# ── SECTORS (TRIAL: Max 10 Tickers / Sector) ───────────────────────────────
 SECTORS = {
-    "IDXINDUST": [
-        "ASII.JK", "UNTR.JK", "PIPA.JK", "BNBR.JK", "HEXA.JK", "IMPC.JK", "MHKI.JK", "LABA.JK", "SMIL.JK", "NTBK.JK", 
-        "PADA.JK", "NAIK.JK", "TOTO.JK", "BHIT.JK", "MARK.JK", "INDX.JK", "PTMP.JK", "ARNA.JK", "KOBX.JK", "ASGR.JK", 
-        "GPSO.JK", "SINI.JK", "HOPE.JK", "FOLK.JK", "KUAS.JK", "KBLI.JK", "SPTO.JK", "IKAI.JK", "SKRN.JK", "MUTU.JK", 
-        "CTTH.JK", "CAKK.JK", "CCSI.JK", "MLIA.JK", "JTPE.JK", "BLUE.JK", "CRSN.JK", "DYAN.JK", "LION.JK", "MDRN.JK", 
-        "VOKS.JK", "SCCO.JK", "KBLM.JK", "JECC.JK", "INTA.JK", "BINO.JK", "VISI.JK", "ARKA.JK", "SOSS.JK", "IKBI.JK", 
-        "AMIN.JK", "ICON.JK", "KONI.JK", "AMFG.JK", "IBFN.JK", "ZBRA.JK", "TIRA.JK", "KIAS.JK", "APII.JK", "HYGN.JK", 
-        "KOIN.JK", "MFMI.JK", "TRIL.JK"
-    ],
-    "IDXNONCYC": [
-        "UNVR.JK", "INDF.JK", "ICBP.JK", "GGRM.JK", "AALI.JK", "JPFA.JK", "MYOR.JK", "CPIN.JK", "RLCO.JK", "LSIP.JK", 
-        "HMSD.JK", "AMRT.JK", "GZCO.JK", "MLPL.JK", "JARR.JK", "BWPT.JK", "ULTJ.JK", "FORE.JK", "TAPG.JK", "CPRO.JK", 
-        "SIMP.JK", "CLEO.JK", "WIIM.JK", "MPPA.JK", "HOKI.JK", "COCO.JK", "DSNG.JK", "IKAN.JK", "SMAR.JK", "BRRC.JK", 
-        "PTPS.JK", "SSMS.JK", "GOOD.JK", "PGUN.JK", "SGRO.JK", "BEEF.JK", "BTEK.JK", "MAIN.JK", "MIDI.JK", "AYAM.JK", 
-        "WMUU.JK", "DEWI.JK", "ASHA.JK", "CMRY.JK", "AISA.JK", "CAMP.JK", "OILS.JK", "ANJT.JK", "TBLA.JK", "ROTI.JK", 
-        "NASI.JK", "ITIC.JK", "DSFI.JK", "ISEA.JK", "JAWA.JK", "NSSS.JK", "CSRA.JK", "STAA.JK", "KEJU.JK", "UNSP.JK", 
-        "MRAT.JK", "DPUM.JK", "PSDN.JK", "STRK.JK", "WAPO.JK", "MBTO.JK", "GULA.JK", "LAPD.JK", "RANC.JK", "NEST.JK", 
-        "TAYS.JK", "CEKA.JK", "ADES.JK", "KINO.JK", "BISI.JK", "ANDI.JK", "PMMP.JK", "DMND.JK", "UCID.JK", "YUPI.JK", 
-        "BEER.JK", "PSGO.JK", "BUDI.JK", "SKBM.JK", "MLBI.JK", "TLDN.JK", "FOOD.JK", "MKTR.JK", "SKLT.JK", "MAXI.JK", 
-        "STTP.JK", "PNGO.JK", "PCAR.JK", "GUNA.JK", "EPMT.JK", "DLTA.JK", "HERO.JK", "TGUK.JK", "VICI.JK", "MSJA.JK", 
-        "SDPC.JK", "MGRO.JK", "FISH.JK", "BOBA.JK", "KMDS.JK", "TCID.JK", "BUAH.JK", "TGKA.JK", "WINE.JK", "ENZO.JK",
-        "CBUT.JK", "WMPP.JK", "IPPE.JK", "DAYA.JK", "SIPD.JK", "CRAB.JK", "FAPA.JK", "AGAR.JK", "TRGU.JK", "ALTO.JK", 
-        "MAGP.JK", "GOLL.JK", "WICO.JK"
-    ],
-   "IDXFINANCE": [
-    "BBCA.JK", "BBRI.JK", "BMRI.JK", "BBNI.JK", "BRIS.JK", "SUPA.JK", "COIN.JK", "BBTN.JK", "ARTO.JK", "BBYB.JK", "BNGA.JK", "BBKP.JK",
-    "BTPS.JK", "BJTM.JK", "SRTG.JK", "PNLF.JK", "PADI.JK", "AGRO.JK", "NISP.JK", "INPC.JK", "BJBR.JK", "BBHI.JK", "BFIN.JK", "BDMN.JK",
-    "BABP.JK", "PNBS.JK", "BGTG.JK", "AHAP.JK", "BANK.JK", "BACA.JK", "BNLI.JK", "BNII.JK", "BCAP.JK", "PNBN.JK", "MEGA.JK", "BVIC.JK",
-    "ADMF.JK", "DNAR.JK", "MAYA.JK", "CFIN.JK", "BTPN.JK", "BSIM.JK", "BEKS.JK", "TUGU.JK", "PEGE.JK", "NOBU.JK", "PALM.JK", "BNBA.JK",
-    "LPPS.JK", "AGRS.JK", "DNET.JK", "AMAR.JK", "GSMF.JK", "JMAS.JK", "TRIM.JK", "MCOR.JK", "PNIN.JK", "SMMA.JK", "PANS.JK", "BKSW.JK",
-    "VINS.JK", "BCIC.JK", "BINA.JK", "WOMF.JK", "LPGI.JK", "LIFE.JK", "VTNY.JK", "VICO.JK", "STAR.JK", "YOII.JK", "FUJI.JK", "MTWI.JK",
-    "POLA.JK", "BBSI.JK", "ASJT.JK", "SDRA.JK", "BMAS.JK", "AMAG.JK", "ASMI.JK", "HDFA.JK", "VRNA.JK", "AMOR.JK", "APIC.JK", "MREI.JK",
-    "ASDM.JK", "TIFA.JK", "BHIT.JK", "ASRM.JK", "RELI.JK", "NICK.JK", "TRUS.JK", "ASBI.JK", "DEFI.JK", "BBLD.JK", "BBMD.JK", "MASB.JK",
-    "BPFI.JK", "YULE.JK", "BPII.JK", "POOL.JK", "BSWD.JK", "SFAN.JK", "ABDA.JK", "OCAP.JK", "PLAS.JK"
-    ],
-    "IDXCYCLIC": [
-    "MNCN.JK", "SCMA.JK", "LPPF.JK", "MINA.JK", "BUVA.JK", "ACES.JK", "ERAA.JK", "HRTA.JK", "FUTR.JK", "MAPI.JK", "AUTO.JK", "GJTL.JK",
-    "FAST.JK", "VKTR.JK", "DOOH.JK", "BMTR.JK", "MPMX.JK", "FILM.JK", "RALS.JK", "KPIG.JK", "MAPA.JK", "SLIS.JK", "ZATA.JK", "SMSM.JK",
-    "JGLE.JK", "ASLC.JK", "IMAS.JK", "MERI.JK", "NETV.JK", "KAQI.JK", "CNMA.JK", "MSIN.JK", "WOOD.JK", "BELL.JK", "PSKT.JK", "VIVA.JK",
-    "MSKY.JK", "BABY.JK", "YELO.JK", "IPTV.JK", "TMPO.JK", "JIHD.JK", "DOSS.JK", "PMUI.JK", "SRIL.JK", "ERAL.JK", "DRMA.JK", "GOLF.JK",
-    "ESTA.JK", "DFAM.JK", "PBRX.JK", "PZZA.JK", "BAIK.JK", "MDIA.JK", "CARS.JK", "ABBA.JK", "GEMA.JK", "PART.JK", "SWID.JK", "EAST.JK",
-    "MARI.JK", "UNTD.JK", "KDTN.JK", "ACRO.JK", "ERTX.JK", "VERN.JK", "BOLA.JK", "KOTA.JK", "MDIY.JK", "FITT.JK", "TOOL.JK", "INDR.JK",
-    "LIVE.JK", "PJAA.JK", "RAAM.JK", "INOV.JK", "CINT.JK", "KICI.JK", "FORU.JK", "ECII.JK", "GRPH.JK", "PANR.JK", "NATO.JK", "LPIN.JK",
-    "CSMI.JK", "TRIS.JK", "UFOE.JK", "BOGA.JK", "SSTM.JK", "MGNA.JK", "DEPO.JK", "ESTI.JK", "POLU.JK", "SOTS.JK", "INDS.JK", "RAFI.JK",
-    "BAYU.JK", "TOYS.JK", "GDYR.JK", "SONA.JK", "MAPB.JK", "PGLI.JK", "BAUT.JK", "GWSA.JK", "HRME.JK", "BIKE.JK", "DIGI.JK", "JSPT.JK",
-    "MICE.JK", "LMPI.JK", "CSAP.JK", "BIMA.JK", "POLY.JK", "SHID.JK", "PTSP.JK", "SBAT.JK", "SCNP.JK", "RICY.JK", "BRAM.JK", "ENAK.JK",
-    "PMJS.JK", "SNLK.JK", "TELE.JK", "BATA.JK", "ARGO.JK", "ZONE.JK", "BOLT.JK", "PNSE.JK", "DUCK.JK", "TYRE.JK", "CLAY.JK", "ARTA.JK",
-    "IIKP.JK", "PDES.JK", "CBMF.JK", "BLTZ.JK", "HOME.JK", "TFCO.JK", "GLOB.JK", "AKKU.JK", "MYTX.JK", "CNTX.JK", "UNIT.JK", "TRIO.JK",
-    "NUSA.JK", "HOTL.JK", "MABA.JK"
-    ],
-    "IDXTECHNO": [
-    "GOTO.JK", "WIFI.JK", "EMTK.JK", "BUKA.JK", "WIRG.JK", "DCII.JK", "IOTF.JK", "MTDL.JK", "ELIT.JK", "MLPT.JK", "DMMX.JK",
-    "TOSK.JK", "JATI.JK", "KIOS.JK", "IRSX.JK", "UVCR.JK", "TRON.JK", "KREN.JK", "CYBR.JK", "LUCK.JK", "PTSN.JK", "HDIT.JK",
-    "EDGE.JK", "DIVA.JK", "TFAS.JK", "ZYRX.JK", "MSTI.JK", "MCAS.JK", "MPIX.JK", "BELI.JK", "AXIO.JK", "AWAN.JK", "AREA.JK",
-    "NFCX.JK", "ATIC.JK", "TECH.JK", "GLVA.JK", "ENVY.JK", "LMAS.JK", "SKYB.JK"
-    ],
-    "IDXBASIC": [
-    "ANTM.JK", "BRMS.JK", "SMGR.JK", "BRPT.JK", "INTP.JK", "EMAS.JK", "MDKA.JK", "INCO.JK", "TINS.JK", "ARCI.JK", "TPIA.JK",
-    "MBMA.JK", "INKP.JK", "PSAB.JK", "NCKL.JK", "AMMN.JK", "ESSA.JK", "TKIM.JK", "KRAS.JK", "DKFT.JK", "NICL.JK", "FPNI.JK",
-    "WSBP.JK", "SMBR.JK", "WTON.JK", "SMGA.JK", "AGII.JK", "AVIA.JK", "NIKL.JK", "SOLA.JK", "ISSP.JK", "MINE.JK", "DAAZ.JK",
-    "OKAS.JK", "OPMS.JK", "BAJA.JK", "NICE.JK", "CHEM.JK", "ZINC.JK", "PPRI.JK", "AYLS.JK", "SRSN.JK", "EKAD.JK", "PBID.JK",
-    "PICO.JK", "ESIP.JK", "CITA.JK", "MOLI.JK", "GDST.JK", "SULI.JK", "TIRT.JK", "MDKI.JK", "ADMG.JK", "SPMA.JK", "SMLE.JK",
-    "CLPI.JK", "ASPR.JK", "NPGF.JK", "BLES.JK", "BATR.JK", "DGWG.JK", "GGRP.JK", "FWCT.JK", "TBMS.JK", "PDPP.JK", "LTLS.JK",
-    "SAMF.JK", "BMSR.JK", "BEBS.JK", "SBMA.JK", "PTMR.JK", "IPOL.JK", "UNIC.JK", "OBMD.JK", "KAYU.JK", "SMCB.JK", "IGAR.JK",
-    "INCI.JK", "INCF.JK", "EPAC.JK", "INAI.JK", "ALDO.JK", "HKMU.JK", "SQMI.JK", "SMKL.JK", "IFII.JK", "IFSH.JK", "PURE.JK",
-    "SWAT.JK", "BTON.JK", "TALF.JK", "KDSI.JK", "INRU.JK", "CMNT.JK", "INTD.JK", "ALKA.JK", "KMTR.JK", "CTBN.JK", "YPAS.JK",
-    "KKES.JK", "AKPI.JK", "DPNS.JK", "APLI.JK", "TRST.JK", "BRNA.JK", "LMSH.JK","ALMI.JK","FASW.JK","ETWA.JK","TDPM.JK","SIMA.JK","KBRI.JK"
-    ],
-    "IDXENERGY": [
-    "ADRO.JK", "BUMI.JK", "PGAS.JK", "PTBA.JK", "ITMG.JK", "DEWA.JK", "CUAN.JK", "HRUM.JK", "PTRO.JK", "RAJA.JK", "MEDC.JK", "ADMR.JK",
-    "HUMI.JK", "ENRG.JK", "BULL.JK", "TOBA.JK", "AADI.JK", "RATU.JK", "CBRE.JK", "INDY.JK", "AKRA.JK", "ELSA.JK", "GTSI.JK", "BIPI.JK",
-    "COAL.JK", "BSSR.JK", "LEAD.JK", "APEX.JK", "TEBE.JK", "ATLA.JK", "SOCI.JK", "FIRE.JK", "PSAT.JK", "GEMS.JK", "DOID.JK", "DSSA.JK",
-    "SGER.JK", "IATA.JK", "BBRM.JK", "BYAN.JK", "ABMM.JK", "TPMA.JK", "MAHA.JK", "BOAT.JK", "KKGI.JK", "MBSS.JK", "WOWS.JK", "CGAS.JK",
-    "RMKE.JK", "WINS.JK", "MTFN.JK", "MBAP.JK", "UNIQ.JK", "RMKO.JK", "SMMT.JK", "SICO.JK", "BSML.JK", "PSSI.JK", "DWGL.JK", "TAMU.JK",
-    "ALII.JK", "ITMA.JK", "RUIS.JK", "CNKO.JK", "TCPI.JK", "HILL.JK", "BOSS.JK", "PKPK.JK", "MYOH.JK", "SEMA.JK", "ARII.JK", "GTBO.JK",
-    "MCOL.JK", "RGAS.JK", "SHIP.JK", "BESS.JK", "RIGS.JK", "JSKY.JK", "KOPI.JK", "PTIS.JK", "CANI.JK", "ARTI.JK", "INPS.JK", "MKAP.JK",
-    "AIMS.JK", "HITS.JK", "SUNI.JK", "TRAM.JK", "SURE.JK", "SMRU.JK", "SUGI.JK"
-    ],
-    "IDXHEALTH": [
-    "KLBF.JK", "SIDO.JK", "KAEF.JK", "PYFA.JK", "MIKA.JK", "DKHH.JK", "SILO.JK", "HEAL.JK", "TSPC.JK", "INAF.JK", "CHEK.JK", "IRRA.JK", "SAME.JK", "MEDS.JK", "PRDA.JK", "MDLA.JK", "SURI.JK", "PRIM.JK", "HALO.JK", "OBAT.JK", "CARE.JK",
-    "MERK.JK", "DGNS.JK", "SOHO.JK", "BMHS.JK", "PEHA.JK", "SRAJ.JK", "MMIX.JK", "DVLA.JK", "OMED.JK", "PEVE.JK", "LABS.JK", "RSCH.JK", "MTMH.JK", "IKPM.JK", "PRAY.JK", "SCPI.JK", "RSGK.JK"
-    ],
-    "IDXINFRA": [
-    "TLKM.JK", "CDIA.JK", "ADHI.JK", "JSMR.JK", "WIKA.JK", "PTPP.JK", "INET.JK", "WSKT.JK", "BREN.JK", "PGEO.JK", "EXCL.JK", "ISAT.JK", "TOWR.JK", "SSIA.JK", "DATA.JK", "OASA.JK", "PPRE.JK", "TBIG.JK", "POWR.JK", "NRCA.JK", "WEGE.JK", "TOTL.JK",
-    "KETR.JK", "IPCC.JK", "KOKA.JK", "KBLV.JK", "MTEL.JK", "CENT.JK", "KRYA.JK", "GMFI.JK", "JAST.JK", "KEEN.JK", "JKON.JK", "ACST.JK", "ASLI.JK", "PBSA.JK", "IPCM.JK", "MORA.JK", "ARKO.JK", "MPOW.JK", "CMNP.JK", "LINK.JK", "HGII.JK", "DGIK.JK", "BDKR.JK",
-    "META.JK", "KARW.JK", "CASS.JK", "BUKK.JK", "TGRA.JK", "GOLD.JK", "BALI.JK", "PTDU.JK", "IDPR.JK", "PORT.JK", "TOPS.JK", "HADE.JK", "TAMA.JK", "BTEL.JK", "GHON.JK", "SUPR.JK", "MTPS.JK", "RONY.JK", "IBST.JK", "LCKM.JK", "PTPW.JK", "MTRA.JK"
-    ],
-    "IDXPROPERT": [
-    "CTRA.JK", "BSDE.JK", "PWON.JK", "SMRA.JK", "KLJA.JK", "PANI.JK", "BKSL.JK", "DADA.JK", "CBDK.JK", "DMAS.JK", "ASRI.JK", "LPKR.JK", "BSBK.JK", "REAL.JK", "ELTY.JK", "APLN.JK", "TRUE.JK", "TRIN.JK", "UANG.JK", "CSIS.JK", "DILD.JK", "KOCI.JK", "BEST.JK",
-    "LAND.JK", "DUTI.JK", "EMDE.JK", "LPLI.JK", "GRIA.JK", "VAST.JK", "BAPI.JK", "MTLA.JK", "SAGE.JK", "BBSS.JK", "HOMI.JK", "PUDP.JK", "RBMS.JK", "URBN.JK", "TARA.JK", "CBPE.JK", "MPRO.JK", "RODA.JK", "SATU.JK", "NASA.JK", "FMII.JK", "BKDP.JK", "GMTD.JK",
-    "PPRO.JK", "BAPA.JK", "PAMG.JK", "MMLP.JK", "PURI.JK", "GPRA.JK", "LPCK.JK", "MDLN.JK", "BCIP.JK", "ADCP.JK", "CITY.JK", "RISE.JK", "WINR.JK", "JRPT.JK", "AMAN.JK", "SMDM.JK", "INDO.JK", "ATAP.JK", "ASPI.JK", "KSIX.JK", "KBAG.JK", "NZIA.JK",
-    "NIRO.JK", "DART.JK", "BIPP.JK", "PLIN.JK", "RDTX.JK", "ROCK.JK", "MKPI.JK", "INPP.JK", "MTSM.JK", "POLL.JK", "POLI.JK", "OMRE.JK", "GAMA.JK", "POSA.JK", "BIKA.JK", "CPRI.JK", "ARMY.JK", "COWL.JK", "RIMO.JK", "LCGP.JK"
-    ],
-    "IDXTRANS": [
-    "PJHB.JK", "GIAA.JK", "SMDR.JK", "BIRD.JK", "BLOG.JK", "IMJS.JK", "ASSA.JK", "TMAS.JK", "LAJU.JK", "HAIS.JK", "KLAS.JK", "MITI.JK", "JAYA.JK", "NELY.JK", "WEHA.JK", "TNCA.JK", "CMPP.JK", "MPXL.JK", "KJEN.JK", "SDMU.JK", "TRUK.JK", "PURA.JK", "HATM.JK",
-    "TAXI.JK", "ELPI.JK", "AKSI.JK", "GTRA.JK", "TRJA.JK", "MIRA.JK", "BLTA.JK", "SAPX.JK", "SAFE.JK", "LRNA.JK", "DEAL.JK", "BPTR.JK", "HELI.JK"
-    ]
+    "IDXINDUST":  ["ASII.JK", "UNTR.JK", "PIPA.JK", "BNBR.JK", "HEXA.JK", "IMPC.JK", "MHKI.JK", "LABA.JK", "SMIL.JK", "NTBK.JK"],
+    "IDXNONCYC":  ["UNVR.JK", "INDF.JK", "ICBP.JK", "GGRM.JK", "AALI.JK", "JPFA.JK", "MYOR.JK", "CPIN.JK", "RLCO.JK", "LSIP.JK"],
+    "IDXFINANCE": ["BBCA.JK", "BBRI.JK", "BMRI.JK", "BBNI.JK", "BRIS.JK", "SUPA.JK", "COIN.JK", "BBTN.JK", "ARTO.JK", "BBYB.JK"],
+    "IDXCYCLIC":  ["MNCN.JK", "SCMA.JK", "LPPF.JK", "MINA.JK", "BUVA.JK", "ACES.JK", "ERAA.JK", "HRTA.JK", "FUTR.JK", "MAPI.JK"],
+    "IDXTECHNO":  ["GOTO.JK", "WIFI.JK", "EMTK.JK", "BUKA.JK", "WIRG.JK", "DCII.JK", "IOTF.JK", "MTDL.JK", "ELIT.JK", "MLPT.JK"],
+    "IDXBASIC":   ["ANTM.JK", "BRMS.JK", "SMGR.JK", "BRPT.JK", "INTP.JK", "EMAS.JK", "MDKA.JK", "INCO.JK", "TINS.JK", "ARCI.JK"],
+    "IDXENERGY":  ["ADRO.JK", "BUMI.JK", "PGAS.JK", "PTBA.JK", "ITMG.JK", "DEWA.JK", "CUAN.JK", "HRUM.JK", "PTRO.JK", "RAJA.JK"],
+    "IDXHEALTH":  ["KLBF.JK", "SIDO.JK", "KAEF.JK", "PYFA.JK", "MIKA.JK", "DKHH.JK", "SILO.JK", "HEAL.JK", "TSPC.JK", "INAF.JK"],
+    "IDXINFRA":   ["TLKM.JK", "CDIA.JK", "ADHI.JK", "JSMR.JK", "WIKA.JK", "PTPP.JK", "INET.JK", "WSKT.JK", "BREN.JK", "PGEO.JK"],
+    "IDXPROPERT": ["CTRA.JK", "BSDE.JK", "PWON.JK", "SMRA.JK", "KLJA.JK", "PANI.JK", "BKSL.JK", "DADA.JK", "CBDK.JK", "DMAS.JK"],
+    "IDXTRANS":   ["PJHB.JK", "GIAA.JK", "SMDR.JK", "BIRD.JK", "BLOG.JK", "IMJS.JK", "ASSA.JK", "TMAS.JK", "LAJU.JK", "HAIS.JK"]
 }
+
 # ── COMMODITIES ────────────────────────────────────────────────────────────
 COMMODITIES = {
     "Gold"      : {"t":"GC=F",     "ma":20, "s":["IDXBASIC","IDXFINANCE"]},
@@ -157,7 +72,6 @@ DISPLAY_COLS = [
     "Commodity Bullish %", "Commodity Context",
 ]
 
-
 # ── GOOGLE SHEETS ──────────────────────────────────────────────────────────
 def gsheet(name):
     try:
@@ -181,11 +95,12 @@ def gsheet(name):
     except Exception as e:
         print(f"❌ GSheet: {e}"); return None
 
-
 # ── DATA DOWNLOAD ──────────────────────────────────────────────────────────
 def get_ohlcv(ticker, days=DOWNLOAD_DAYS):
-    end   = datetime.today()
+    # TAMBAHKAN + timedelta(days=1) DI SINI
+    end   = datetime.today() + timedelta(days=1) 
     start = end - timedelta(days=days)
+    
     try:
         df = yf.download(
             ticker,
@@ -217,40 +132,25 @@ def get_ohlcv(ticker, days=DOWNLOAD_DAYS):
     df.sort_index(inplace=True)
     return df
 
-
 # ── STRATEGY CLASSIFICATION ────────────────────────────────────────────────
 def get_strategy_category(sector, current_price, adtv_miliar):
     """
     Mengklasifikasikan strategi berdasarkan sektor, harga saham, dan likuiditas (ADTV).
-    Menggantikan logika hardcode ticker menjadi rule-based sesuai probabilitas IHSG.
     """
-    
-    # 1. Kategori: Price Action / Reversal
-    # Syarat: Sangat likuid (misal ADTV > 50 Miliar) dan sering di sektor Keuangan/Energi
     if adtv_miliar >= 50 and sector in ["IDXFINANCE", "IDXENERGY"]:
-        # Pengecualian: Bank buku 4 (harga > 2000) lebih cocok di Trend-Following
         if sector == "IDXFINANCE" and current_price >= 2000:
             return "Trend-Following"
         return "Price Action / Reversal"
         
-    # 2. Kategori: Trend-Following (Pengikut Tren)
-    # Syarat: Harga > 2000, Sektor Keuangan atau Infrastruktur
     if current_price >= 2000 and sector in ["IDXFINANCE", "IDXINFRA"]:
         return "Trend-Following"
         
-    # 3. Kategori: Breakout & Volatility (Tembusan)
-    # Syarat: Harga 100 - 1500, Sektor Energi, Basic Materials, Teknologi
     if 100 <= current_price <= 1500 and sector in ["IDXENERGY", "IDXBASIC", "IDXTECHNO"]:
         return "Breakout & Volatility"
         
-    # 4. Kategori: Mean Reversion / Momentum (Pantulan)
-    # Syarat: Harga 500 - 3000, Consumer Non-Cyclicals, Healthcare
     if 500 <= current_price <= 3000 and sector in ["IDXNONCYC", "IDXHEALTH"]:
         return "Mean Reversion"
         
-    # 5. Fallback/Default Logic (Sapu Jagat)
-    # Jika ada saham yang harganya di luar rentang ideal di atas, 
-    # kembalikan ke karakter dasar volatilitas sektornya.
     if sector in ["IDXNONCYC", "IDXHEALTH", "IDXPROPERT"]:
         return "Mean Reversion"
     elif sector in ["IDXENERGY", "IDXBASIC", "IDXTECHNO", "IDXCYCLIC", "IDXINDUST", "IDXTRANS"]:
@@ -258,50 +158,42 @@ def get_strategy_category(sector, current_price, adtv_miliar):
     else:
         return "Trend-Following"
 
-
-# ── SUPERTREND LOGIC (FAST NUMPY VECTORIZATION) ────────────────────────────
+# ── SUPERTREND LOGIC ───────────────────────────────────────────────────────
 def calc_supertrend(df, period=ATR_LENGTH, multiplier=FACTOR):
-    """Menghitung Supertrend persis seperti Pine Script menggunakan Numpy agar cepat"""
+    """Menghitung Supertrend"""
     high = df['High'].values
     low = df['Low'].values
     close = df['Close'].values
     n = len(close)
     
-    # 1. Hitung True Range (TR)
     tr = np.zeros(n)
     for i in range(1, n):
         tr[i] = max(high[i] - low[i], abs(high[i] - close[i-1]), abs(low[i] - close[i-1]))
         
-    # 2. Hitung ATR (TradingView uses RMA/Smoothed Moving Average)
     atr = np.zeros(n)
     atr[1] = np.mean(tr[1:period+1]) if period < n else np.mean(tr[1:])
     for i in range(2, n):
         atr[i] = (atr[i-1] * (period - 1) + tr[i]) / period
         
-    # 3. Hitung Basic Bands
     hl2 = (high + low) / 2
     basic_ub = hl2 + (multiplier * atr)
     basic_lb = hl2 - (multiplier * atr)
     
-    # 4. Final Bands & Trend Direction
     final_ub = np.zeros(n)
     final_lb = np.zeros(n)
-    direction = np.ones(n) # 1 = Bullish, -1 = Bearish
+    direction = np.ones(n) 
     
     for i in range(1, n):
         final_ub[i] = basic_ub[i]
         final_lb[i] = basic_lb[i]
         
-        # Penentuan arah trend berdasarkan harga penutupan
         if close[i] > final_ub[i-1]:
             direction[i] = 1
         elif close[i] < final_lb[i-1]:
             direction[i] = -1
-            
         else:
             direction[i] = direction[i-1]
             
-        # Penyesuaian Final Bands (Band tidak boleh bergerak mundur melawan trend)
         if direction[i] == 1:
             if final_lb[i] < final_lb[i-1]:
                 final_lb[i] = final_lb[i-1]
@@ -309,7 +201,6 @@ def calc_supertrend(df, period=ATR_LENGTH, multiplier=FACTOR):
             if final_ub[i] > final_ub[i-1]:
                 final_ub[i] = final_ub[i-1]
 
-    # Ekstrak data sinyal
     df_sig = pd.DataFrame(index=df.index)
     df_sig['direction'] = direction
     df_sig['sl_price'] = np.where(direction == 1, final_lb, final_ub)
@@ -342,11 +233,11 @@ def calc_supertrend(df, period=ATR_LENGTH, multiplier=FACTOR):
     
     curr_sl = float(df_sig['sl_price'].iloc[-1])
 
+    # ===== PERUBAHAN LABEL SIGNAL =====
     if lb <= sb:
-        return {"label": fmt_label(lb, "Buy Signal"), "date": fmt_date(le_dt), "type": "Supertrend Long", "bars": lb, "sl": curr_sl}
+        return {"label": fmt_label(lb, "My Long Entry Id"), "date": fmt_date(le_dt), "type": "Supertrend Long", "bars": lb, "sl": curr_sl}
     else:
-        return {"label": fmt_label(sb, "Sell Signal"), "date": fmt_date(se_dt), "type": "Supertrend Short", "bars": sb, "sl": curr_sl}
-
+        return {"label": fmt_label(sb, "My Short Entry Id"), "date": fmt_date(se_dt), "type": "Supertrend Short", "bars": sb, "sl": curr_sl}
 
 # ── CUSTOM SCORE & ADTV ────────────────────────────────────────────────────
 def calc_custom_score(df):
@@ -360,7 +251,7 @@ def calc_custom_score(df):
     
     adtv_1m = 0
     if len(tv_ma20) > 0 and pd.notna(tv_ma20.iloc[-1]):
-        adtv_1m = tv_ma20.iloc[-1] / 1_000_000_000  # Konversi ke Miliar
+        adtv_1m = tv_ma20.iloc[-1] / 1_000_000_000 
         
     if tv.iloc[-1] > tv_ma20.iloc[-1]: score += 1
     if v.iloc[-1] > v_ma20.iloc[-1]: score += 1
@@ -377,39 +268,26 @@ def calc_custom_score(df):
             
     return score, round(adtv_1m, 2)
 
-
-# ── TV SCORE (COMPLIANT WITH TRADINGVIEW SPECS) ────────────────────────────
+# ── TV SCORE ───────────────────────────────────────────────────────────────
 def calc_tv(df):
     s, n = 0, 0
     def add(v): nonlocal s, n; s += v; n += 1
     
     try:
-        c = df["Close"]
-        h = df["High"]
-        l = df["Low"]
-        cn = float(c.iloc[-1])
+        c = df["Close"]; h = df["High"]; l = df["Low"]; cn = float(c.iloc[-1])
         
-        # ===============================================
-        # 1. ALL MOVING AVERAGES (SMA & EMA: 10, 20, 50, 100, 200)
-        # ===============================================
         for p in [10, 20, 50, 100, 200]:
             sma = c.rolling(p).mean().iloc[-1]
             ema = c.ewm(span=p, adjust=False).mean().iloc[-1]
-            if pd.notna(sma): 
-                add(1 if cn > sma else -1 if cn < sma else 0)
-            if pd.notna(ema): 
-                add(1 if cn > ema else -1 if cn < ema else 0)
+            if pd.notna(sma): add(1 if cn > sma else -1 if cn < sma else 0)
+            if pd.notna(ema): add(1 if cn > ema else -1 if cn < ema else 0)
 
-        # ===============================================
-        # 2. ICHIMOKU CLOUD
-        # ===============================================
-        tk = (h.rolling(9).max() + l.rolling(9).min()) / 2  # Conversion Line
-        kj = (h.rolling(26).max() + l.rolling(26).min()) / 2 # Base Line
-        sa = ((tk + kj) / 2).shift(26)                       # Lead 1
-        sb2 = ((h.rolling(52).max() + l.rolling(52).min()) / 2).shift(26) # Lead 2
+        tk = (h.rolling(9).max() + l.rolling(9).min()) / 2
+        kj = (h.rolling(26).max() + l.rolling(26).min()) / 2
+        sa = ((tk + kj) / 2).shift(26)
+        sb2 = ((h.rolling(52).max() + l.rolling(52).min()) / 2).shift(26)
         
         tk_0, kj_0, sa_0, sb2_0 = tk.iloc[-1], kj.iloc[-1], sa.iloc[-1], sb2.iloc[-1]
-        
         if pd.notna(sb2_0):
             if sa_0 > sb2_0 and kj_0 > sa_0 and tk_0 > kj_0 and cn > tk_0: add(1)
             elif sa_0 < sb2_0 and kj_0 < sa_0 and tk_0 < kj_0 and cn < tk_0: add(-1)
@@ -417,9 +295,6 @@ def calc_tv(df):
 
         import ta as _ta
 
-        # ===============================================
-        # 3. RELATIVE STRENGTH INDEX (14)
-        # ===============================================
         rsi = _ta.momentum.RSIIndicator(c, 14).rsi()
         r0, r1 = rsi.iloc[-1], rsi.iloc[-2]
         if pd.notna(r0):
@@ -427,9 +302,6 @@ def calc_tv(df):
             elif r0 > 70 and r0 < r1: add(-1)
             else: add(0)
 
-        # ===============================================
-        # 4. STOCHASTIC (14, 3, 3)
-        # ===============================================
         stoch = _ta.momentum.StochasticOscillator(h, l, c, window=14, smooth_window=3)
         k, d = stoch.stoch(), stoch.stoch_signal()
         k0, d0 = k.iloc[-1], d.iloc[-1]
@@ -438,9 +310,6 @@ def calc_tv(df):
             elif k0 > 80 and d0 > 80 and k0 < d0: add(-1)
             else: add(0)
 
-        # ===============================================
-        # 5. COMMODITY CHANNEL INDEX (20)
-        # ===============================================
         cci = _ta.trend.CCIIndicator(h, l, c, window=20).cci()
         c0, c1 = cci.iloc[-1], cci.iloc[-2]
         if pd.notna(c0):
@@ -448,9 +317,6 @@ def calc_tv(df):
             elif c0 > 100 and c0 < c1: add(-1)
             else: add(0)
 
-        # ===============================================
-        # 6. AVERAGE DIRECTIONAL INDEX (14)
-        # ===============================================
         adxi = _ta.trend.ADXIndicator(h, l, c, 14)
         adx, pdi, mdi = adxi.adx(), adxi.adx_pos(), adxi.adx_neg()
         av0, av1 = adx.iloc[-1], adx.iloc[-2]
@@ -459,9 +325,6 @@ def calc_tv(df):
             elif pdi.iloc[-1] < mdi.iloc[-1] and av0 > 20 and av0 > av1: add(-1)
             else: add(0)
 
-        # ===============================================
-        # 7. AWESOME OSCILLATOR
-        # ===============================================
         ao = _ta.momentum.AwesomeOscillatorIndicator(h, l).awesome_oscillator()
         ao0, ao1, ao2 = ao.iloc[-1], ao.iloc[-2], ao.iloc[-3]
         if pd.notna(ao0):
@@ -474,9 +337,6 @@ def calc_tv(df):
             elif saucer_sell or zero_cross_sell: add(-1)
             else: add(0)
 
-        # ===============================================
-        # 8. MOMENTUM (10)
-        # ===============================================
         mom = c.diff(10)
         m0, m1 = mom.iloc[-1], mom.iloc[-2]
         if pd.notna(m0):
@@ -484,9 +344,6 @@ def calc_tv(df):
             elif m0 < m1: add(-1)
             else: add(0)
 
-        # ===============================================
-        # 9. MACD (12, 26, 9)
-        # ===============================================
         macd = _ta.trend.MACD(c)
         m_line, m_sig = macd.macd(), macd.macd_signal()
         if pd.notna(m_line.iloc[-1]):
@@ -494,9 +351,6 @@ def calc_tv(df):
             elif m_line.iloc[-1] < m_sig.iloc[-1]: add(-1)
             else: add(0)
 
-        # ===============================================
-        # 10. WILLIAMS %R (14)
-        # ===============================================
         wpr = _ta.momentum.WilliamsRIndicator(h, l, c, 14).williams_r()
         w0, w1 = wpr.iloc[-1], wpr.iloc[-2]
         if pd.notna(w0):
@@ -504,9 +358,6 @@ def calc_tv(df):
             elif w0 > -20 and w0 < w1: add(-1)
             else: add(0)
 
-        # ===============================================
-        # 11. ULTIMATE OSCILLATOR (7, 14, 28)
-        # ===============================================
         uo = _ta.momentum.UltimateOscillator(h, l, c).ultimate_oscillator()
         u0 = uo.iloc[-1]
         if pd.notna(u0):
@@ -514,30 +365,18 @@ def calc_tv(df):
             elif u0 < 30: add(-1)
             else: add(0)
 
-        # ===============================================
-        # RATING CALCULATION (Exact Matching)
-        # ===============================================
         fv = s / n if n > 0 else 0
         
-        # Perbaikan batas threshold sesuai spek TradingView
-        if -1.0 <= fv < -0.5:
-            lbl = "Jual Kuat"
-        elif -0.5 <= fv < -0.1:
-            lbl = "Jual"
-        elif -0.1 <= fv <= 0.1:
-            lbl = "Netral"
-        elif 0.1 < fv <= 0.5:
-            lbl = "Beli"
-        elif 0.5 < fv <= 1.0:
-            lbl = "Beli Kuat"
-        else:
-            lbl = "Netral"
+        if -1.0 <= fv < -0.5: lbl = "Jual Kuat"
+        elif -0.5 <= fv < -0.1: lbl = "Jual"
+        elif -0.1 <= fv <= 0.1: lbl = "Netral"
+        elif 0.1 < fv <= 0.5: lbl = "Beli"
+        elif 0.5 < fv <= 1.0: lbl = "Beli Kuat"
+        else: lbl = "Netral"
             
         return round(fv, 2), lbl
-
     except Exception as e:
         return 0.0, "Netral"
-
 
 # ── COMMODITY ──────────────────────────────────────────────────────────────
 def fetch_commodities():
@@ -577,14 +416,12 @@ def comm_sector(sector, ctx):
     summ=" | ".join(f"{'✅' if u else '⚠️'}{n}" for n,u in rel[:5])
     return {"pct":pct,"summary":summ}
 
-
 # ── ANALYZE TICKER ─────────────────────────────────────────────────────────
 def analyze(ticker, sector, ctx):
     df = get_ohlcv(ticker)
     if df is None or len(df) < max(ATR_LENGTH, 52)+2:
         print(f"    [skip] {ticker}"); return None
 
-    # Menggunakan Supertrend sebagai pengganti Channel Breakout
     st = calc_supertrend(df)
     custom_score, adtv = calc_custom_score(df)
     tvs, tvl = calc_tv(df)
@@ -592,16 +429,14 @@ def analyze(ticker, sector, ctx):
     close_now = float(df["Close"].iloc[-1])
     tgl = df.index[-1].strftime("%d-%b-%y")
 
-    # Klasifikasi strategi menggunakan fungsi baru (membutuhkan harga dan ADTV)
     strat_cat = get_strategy_category(sector, close_now, adtv)
 
-    # Action Logic berdasarkan Supertrend
+    # ===== PERUBAHAN ACTION LOGIC =====
     warning = " (⚠️ Sepi)" if adtv < 1.0 else ""
     if st["type"] == "Supertrend Long":
-        if st["bars"] <= 1: action = f"BUY NOW{warning}"
-        else: action = f"HOLD{warning}"
+        action = f"My Long{warning}"   # Untuk entry/simpan
     else:
-        action = "SELL / WAIT"
+        action = f"My Short{warning}"  # Untuk jual
 
     return {
         "Ticker"                  : ticker,
@@ -609,7 +444,7 @@ def analyze(ticker, sector, ctx):
         "Sektor"                  : sector,
         "Action"                  : action,
         "Harga"                   : int(close_now),
-        "Batas Jual (SL)"         : int(st["sl"]), # SL diambil dari Supertrend Line
+        "Batas Jual (SL)"         : int(st["sl"]),
         "ADTV (M)"                : adtv,
         "Tgl Data"                : tgl,
         "Supertrend Signal"       : st["label"],
@@ -639,7 +474,6 @@ def run_sector(sector, tickers, ctx):
     df=df.sort_values(["_le","_bars"],ascending=[False,True])
     df=df.drop(columns=["_type","_bars","_le"]).reset_index(drop=True)
     return df
-
 
 # ── UPLOAD ─────────────────────────────────────────────────────────────────
 def upload_sector(sector, df, ctx):
@@ -688,7 +522,7 @@ def upload_summary(all_rows, ctx):
 
         df["_le"]=(df.get("_type","")=="Supertrend Long").astype(int)
         df["_b"]=pd.to_numeric(df.get("_bars",999999),errors="coerce").fillna(999999)
-        # Sort by: Long breakout first, shortest bars ago first, highest score TV
+        
         df=df.sort_values(["_le","_b","Skor TV"],ascending=[False,True,False])
         df=df.drop(columns=["_le","_b","_type","_bars"],errors="ignore").reset_index(drop=True)
 
@@ -701,11 +535,10 @@ def upload_summary(all_rows, ctx):
         print(f"  ✅ {len(df)} rows")
     except Exception as e: print(f"  ❌ Summary: {e}")
 
-
 # ── MAIN ───────────────────────────────────────────────────────────────────
 def main():
     ts=datetime.now(WIB).strftime("%Y-%m-%d %H:%M WIB")
-    print(f"\n{'═'*60}\n  IHSG Supertrend Screener v4.0   {ts}")
+    print(f"\n{'═'*60}\n  IHSG Supertrend Screener v4.0 (Trial Mode)   {ts}")
     print(f"  ATR={ATR_LENGTH} | Factor={FACTOR} | {DOWNLOAD_DAYS}d history")
     print(f"{'═'*60}\n")
 
@@ -725,11 +558,13 @@ def main():
     df_f=pd.DataFrame(all_rows)
     print(f"\n{'═'*60}")
     print(f"  Total           : {len(df_f)}")
-    print(f"  Supertrend Long : {df_f['Supertrend Signal'].str.contains('Buy Signal',na=False).sum()}")
-    print(f"  Supertrend Short: {df_f['Supertrend Signal'].str.contains('Sell Signal',na=False).sum()}")
+    
+    # ===== PERUBAHAN PRINT SUMMARY LOG =====
+    print(f"  Supertrend Long : {df_f['Supertrend Signal'].str.contains('My Long Entry Id',na=False).sum()}")
+    print(f"  Supertrend Short: {df_f['Supertrend Signal'].str.contains('My Short Entry Id',na=False).sum()}")
+    
     print(f"  Breakout HARI INI: {df_f['Supertrend Signal'].str.contains('hari ini',na=False).sum()}")
     print(f"{'═'*60}\n")
-
 
 if __name__ == "__main__":
     main()
