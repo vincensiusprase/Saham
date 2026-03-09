@@ -378,48 +378,165 @@ def calc_custom_score(df):
     return score, round(adtv_1m, 2)
 
 
-# ── TV SCORE ───────────────────────────────────────────────────────────────
+# ── TV SCORE (COMPLIANT WITH TRADINGVIEW SPECS) ────────────────────────────
 def calc_tv(df):
     s, n = 0, 0
-    def add(v): nonlocal s,n; s+=v; n+=1
+    def add(v): nonlocal s, n; s += v; n += 1
+    
     try:
-        c  = df["Close"];  h = df["High"];  l = df["Low"]
+        c = df["Close"]
+        h = df["High"]
+        l = df["Low"]
         cn = float(c.iloc[-1])
-        for p in [10,20,50,100,200]:
+        
+        # ===============================================
+        # 1. ALL MOVING AVERAGES (SMA & EMA: 10, 20, 50, 100, 200)
+        # ===============================================
+        for p in [10, 20, 50, 100, 200]:
             sma = c.rolling(p).mean().iloc[-1]
-            ema = c.ewm(span=p,adjust=False).mean().iloc[-1]
-            if pd.notna(sma): add(1 if cn>sma else -1)
-            if pd.notna(ema): add(1 if cn>ema else -1)
-        tk = (h.rolling(9).max()+l.rolling(9).min())/2
-        kj = (h.rolling(26).max()+l.rolling(26).min())/2
-        sa = ((tk+kj)/2).shift(26); sb2 = ((h.rolling(52).max()+l.rolling(52).min())/2).shift(26)
-        ct = pd.concat([sa,sb2],axis=1).max(axis=1).iloc[-1]
-        if pd.notna(ct): add(1 if cn>ct else -1)
-        d  = c.diff()
-        g  = d.clip(lower=0).ewm(com=13,adjust=False).mean()
-        ls = (-d.clip(upper=0)).ewm(com=13,adjust=False).mean()
-        rsi= (100-100/(1+g/ls.replace(0,np.nan)))
-        r0,r1 = float(rsi.iloc[-1]),float(rsi.iloc[-2])
-        if r0<30 and r0>r1: add(1)
-        elif r0>70 and r0<r1: add(-1)
-        else: add(0)
-        fast=c.ewm(span=12,adjust=False).mean(); slow=c.ewm(span=26,adjust=False).mean()
-        macd=fast-slow; sig=macd.ewm(span=9,adjust=False).mean()
-        add(1 if macd.iloc[-1]>sig.iloc[-1] else -1)
-        try:
-            import ta as _ta
-            adxi=_ta.trend.ADXIndicator(h,l,c,14)
-            av=adxi.adx().iloc[-1]; pdi=adxi.adx_pos().iloc[-1]; mdi=adxi.adx_neg().iloc[-1]
-            if pd.notna(av) and av>20: add(1 if pdi>mdi else -1)
+            ema = c.ewm(span=p, adjust=False).mean().iloc[-1]
+            if pd.notna(sma): 
+                add(1 if cn > sma else -1 if cn < sma else 0)
+            if pd.notna(ema): 
+                add(1 if cn > ema else -1 if cn < ema else 0)
+
+        # ===============================================
+        # 2. ICHIMOKU CLOUD
+        # ===============================================
+        tk = (h.rolling(9).max() + l.rolling(9).min()) / 2  # Conversion Line
+        kj = (h.rolling(26).max() + l.rolling(26).min()) / 2 # Base Line
+        sa = ((tk + kj) / 2).shift(26)                       # Lead 1
+        sb2 = ((h.rolling(52).max() + l.rolling(52).min()) / 2).shift(26) # Lead 2
+        
+        tk_0, kj_0, sa_0, sb2_0 = tk.iloc[-1], kj.iloc[-1], sa.iloc[-1], sb2.iloc[-1]
+        
+        if pd.notna(sb2_0):
+            if sa_0 > sb2_0 and kj_0 > sa_0 and tk_0 > kj_0 and cn > tk_0: add(1)
+            elif sa_0 < sb2_0 and kj_0 < sa_0 and tk_0 < kj_0 and cn < tk_0: add(-1)
             else: add(0)
-        except: add(0)
-        mom=c.diff(10); add(1 if mom.iloc[-1]>mom.iloc[-2] else -1)
-        fv = s/n if n>0 else 0
-        lbl=("Jual Kuat" if fv<=-0.5 else "Jual" if fv<=-0.1 else
-             "Netral"   if fv< 0.1  else "Beli" if fv< 0.5  else "Beli Kuat")
-        return round(fv,2), lbl
-    except:
-        return 0.0,"Netral"
+
+        import ta as _ta
+
+        # ===============================================
+        # 3. RELATIVE STRENGTH INDEX (14)
+        # ===============================================
+        rsi = _ta.momentum.RSIIndicator(c, 14).rsi()
+        r0, r1 = rsi.iloc[-1], rsi.iloc[-2]
+        if pd.notna(r0):
+            if r0 < 30 and r0 > r1: add(1)
+            elif r0 > 70 and r0 < r1: add(-1)
+            else: add(0)
+
+        # ===============================================
+        # 4. STOCHASTIC (14, 3, 3)
+        # ===============================================
+        stoch = _ta.momentum.StochasticOscillator(h, l, c, window=14, smooth_window=3)
+        k, d = stoch.stoch(), stoch.stoch_signal()
+        k0, d0 = k.iloc[-1], d.iloc[-1]
+        if pd.notna(k0) and pd.notna(d0):
+            if k0 < 20 and d0 < 20 and k0 > d0: add(1)
+            elif k0 > 80 and d0 > 80 and k0 < d0: add(-1)
+            else: add(0)
+
+        # ===============================================
+        # 5. COMMODITY CHANNEL INDEX (20)
+        # ===============================================
+        cci = _ta.trend.CCIIndicator(h, l, c, window=20).cci()
+        c0, c1 = cci.iloc[-1], cci.iloc[-2]
+        if pd.notna(c0):
+            if c0 < -100 and c0 > c1: add(1)
+            elif c0 > 100 and c0 < c1: add(-1)
+            else: add(0)
+
+        # ===============================================
+        # 6. AVERAGE DIRECTIONAL INDEX (14)
+        # ===============================================
+        adxi = _ta.trend.ADXIndicator(h, l, c, 14)
+        adx, pdi, mdi = adxi.adx(), adxi.adx_pos(), adxi.adx_neg()
+        av0, av1 = adx.iloc[-1], adx.iloc[-2]
+        if pd.notna(av0):
+            if pdi.iloc[-1] > mdi.iloc[-1] and av0 > 20 and av0 > av1: add(1)
+            elif pdi.iloc[-1] < mdi.iloc[-1] and av0 > 20 and av0 > av1: add(-1)
+            else: add(0)
+
+        # ===============================================
+        # 7. AWESOME OSCILLATOR
+        # ===============================================
+        ao = _ta.momentum.AwesomeOscillatorIndicator(h, l).awesome_oscillator()
+        ao0, ao1, ao2 = ao.iloc[-1], ao.iloc[-2], ao.iloc[-3]
+        if pd.notna(ao0):
+            saucer_buy = ao0 > 0 and ao0 > ao1 and ao1 < ao2
+            zero_cross_buy = ao0 > 0 and ao1 < 0
+            saucer_sell = ao0 < 0 and ao0 < ao1 and ao1 > ao2
+            zero_cross_sell = ao0 < 0 and ao1 > 0
+            
+            if saucer_buy or zero_cross_buy: add(1)
+            elif saucer_sell or zero_cross_sell: add(-1)
+            else: add(0)
+
+        # ===============================================
+        # 8. MOMENTUM (10)
+        # ===============================================
+        mom = c.diff(10)
+        m0, m1 = mom.iloc[-1], mom.iloc[-2]
+        if pd.notna(m0):
+            if m0 > m1: add(1)
+            elif m0 < m1: add(-1)
+            else: add(0)
+
+        # ===============================================
+        # 9. MACD (12, 26, 9)
+        # ===============================================
+        macd = _ta.trend.MACD(c)
+        m_line, m_sig = macd.macd(), macd.macd_signal()
+        if pd.notna(m_line.iloc[-1]):
+            if m_line.iloc[-1] > m_sig.iloc[-1]: add(1)
+            elif m_line.iloc[-1] < m_sig.iloc[-1]: add(-1)
+            else: add(0)
+
+        # ===============================================
+        # 10. WILLIAMS %R (14)
+        # ===============================================
+        wpr = _ta.momentum.WilliamsRIndicator(h, l, c, 14).williams_r()
+        w0, w1 = wpr.iloc[-1], wpr.iloc[-2]
+        if pd.notna(w0):
+            if w0 < -80 and w0 > w1: add(1)
+            elif w0 > -20 and w0 < w1: add(-1)
+            else: add(0)
+
+        # ===============================================
+        # 11. ULTIMATE OSCILLATOR (7, 14, 28)
+        # ===============================================
+        uo = _ta.momentum.UltimateOscillator(h, l, c).ultimate_oscillator()
+        u0 = uo.iloc[-1]
+        if pd.notna(u0):
+            if u0 > 70: add(1)
+            elif u0 < 30: add(-1)
+            else: add(0)
+
+        # ===============================================
+        # RATING CALCULATION (Exact Matching)
+        # ===============================================
+        fv = s / n if n > 0 else 0
+        
+        # Perbaikan batas threshold sesuai spek TradingView
+        if -1.0 <= fv < -0.5:
+            lbl = "Jual Kuat"
+        elif -0.5 <= fv < -0.1:
+            lbl = "Jual"
+        elif -0.1 <= fv <= 0.1:
+            lbl = "Netral"
+        elif 0.1 < fv <= 0.5:
+            lbl = "Beli"
+        elif 0.5 < fv <= 1.0:
+            lbl = "Beli Kuat"
+        else:
+            lbl = "Netral"
+            
+        return round(fv, 2), lbl
+
+    except Exception as e:
+        return 0.0, "Netral"
 
 
 # ── COMMODITY ──────────────────────────────────────────────────────────────
