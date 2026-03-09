@@ -97,18 +97,27 @@ def gsheet(name):
 
 # ── DATA DOWNLOAD ──────────────────────────────────────────────────────────
 def get_ohlcv(ticker, days=DOWNLOAD_DAYS):
-    # TAMBAHKAN + timedelta(days=1) DI SINI
-    end   = datetime.today() + timedelta(days=1) 
+
+    end   = datetime.today()
+
     start = end - timedelta(days=days)
-    
+
     try:
+
         df = yf.download(
+
             ticker,
+
             start=start.strftime("%Y-%m-%d"),
+
             end=end.strftime("%Y-%m-%d"),
+
             interval="1d",
+
             progress=False,
+
             auto_adjust=False,
+
         )
     except Exception as e:
         return None
