@@ -234,6 +234,7 @@ def calc_supertrend(df, period=ATR_LENGTH, multiplier=FACTOR):
         return {"label": fmt_label(sb, "My Short Entry Id"), "date": fmt_date(se_dt), "type": "Supertrend Short", "bars": sb, "sl": curr_sl}
 
 # ── CUSTOM SCORE & ADTV ────────────────────────────────────────────────────
+# ── CUSTOM SCORE & ADTV ────────────────────────────────────────────────────
 def calc_custom_score(df, sector, current_price):
     score = 0
     reasons = [] # Array untuk menyimpan alasan poin
@@ -252,26 +253,27 @@ def calc_custom_score(df, sector, current_price):
     # Menentukan strat_cat di dalam custom score agar bisa dipakai syarat poin
     strat_cat = get_strategy_category(sector, current_price, adtv_1m)
     
-    # 1. Syarat teks (meski tidak nambah poin, tetap dilabel)
+    # 1. Syarat ADTV > 1 Miliar (+1 Poin)
     if adtv_1m > 1.0:
+        score += 1
         reasons.append("ADTV > 1M")
         
-    # 2. Syarat Turnover > MA20
+    # 2. Syarat Turnover > MA20 (+1 Poin)
     if tv.iloc[-1] > tv_ma20.iloc[-1]: 
         score += 1
         reasons.append("TV > MA20")
         
-    # 3. Syarat Volume > MA20
+    # 3. Syarat Volume > MA20 (+1 Poin)
     if v.iloc[-1] > v_ma20.iloc[-1]: 
         score += 1
         reasons.append("Vol > MA20")
         
-    # 4. BARU: Kategori Strategi Supertrend (Trend-Following) +1 Poin
+    # 4. Kategori Strategi Supertrend (Trend-Following) (+1 Poin)
     if strat_cat == "Trend-Following":
         score += 1
         reasons.append("Cocok Supertrend")
         
-    # 5. Syarat Ichimoku Cloud
+    # 5. Syarat Ichimoku Cloud (Harga di atas awan Kumo) (+1 Poin)
     if len(df) >= 52:
         tenkan = (df["High"].rolling(9).max() + df["Low"].rolling(9).min()) / 2
         kijun = (df["High"].rolling(26).max() + df["Low"].rolling(26).min()) / 2
@@ -280,14 +282,14 @@ def calc_custom_score(df, sector, current_price):
         cloud_top = pd.concat([span_a, span_b], axis=1).max(axis=1)
         
         if pd.notna(cloud_top.iloc[-1]) and current_price > cloud_top.iloc[-1]:
-            score += 2
+            score += 1  # <-- Diubah dari +2 menjadi +1 agar hitungannya persis sama dengan jumlah alasan
             reasons.append("Harga > Kumo")
             
     # Gabungkan alasan menjadi string yang rapi
     reason_str = ", ".join(reasons) if reasons else "-"
             
     return score, round(adtv_1m, 2), strat_cat, reason_str
-
+  
 # ── TV SCORE ───────────────────────────────────────────────────────────────
 def calc_tv(df):
     s, n = 0, 0
