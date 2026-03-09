@@ -1,4 +1,4 @@
-name: Run Market Scanner Strategy
+name: Run Market Scanner Channel Breakout Strategy
 
 on:
   schedule:
@@ -26,4 +26,4 @@ jobs:
       - name: Run Script
         env:
           GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
-        run: python StrategyScreener.py
+        run: python ChannelBreakoutStrategyScreener.py
