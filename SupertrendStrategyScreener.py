@@ -65,10 +65,11 @@ COMMODITIES = {
 FALLBACK = {"Nickel":"DBB","Aluminium":"DBB","Zinc":"DBB",
             "Tin":"JJT","Coal":"ARCH","CPO":"POW.L"}
 
+# ===== KOLOM BARU DITAMBAHKAN: Alasan Rek TV =====
 DISPLAY_COLS = [
     "Ticker", "Kategori Strategi", "Sektor", "Action", "Harga", "Batas Jual (SL)", 
     "Supertrend Signal", "Tgl Breakout Supertrend", "Skor Tambahan", "ADTV (M)",
-    "Skor TV", "Rek TV",
+    "Skor TV", "Rek TV", "Alasan Rek TV",
     "Commodity Bullish %", "Commodity Context",
 ]
 
@@ -97,7 +98,6 @@ def gsheet(name):
 
 # ── DATA DOWNLOAD ──────────────────────────────────────────────────────────
 def get_ohlcv(ticker, days=DOWNLOAD_DAYS):
-    # KEMBALI SEPERTI SEMULA: Tidak di-plus 1 hari untuk yfinance end date
     end   = datetime.today()
     start = end - timedelta(days=days)
 
@@ -226,7 +226,6 @@ def calc_supertrend(df, period=ATR_LENGTH, multiplier=FACTOR):
 
     def fmt_date(dt):
         if dt is None: return "-"
-        # PERBAIKAN: HANYA TAMPILAN teks tanggalnya saja yang di +1 hari
         return (pd.Timestamp(dt) + pd.Timedelta(days=1)).strftime('%d-%b-%y')
 
     lb = le_b if le_b is not None else 999999
@@ -268,10 +267,18 @@ def calc_custom_score(df):
             
     return score, round(adtv_1m, 2)
 
-# ── TV SCORE ───────────────────────────────────────────────────────────────
+# ── TV SCORE DENGAN ALASAN REKOMENDASI ──────────────────────────────────────
 def calc_tv(df):
     s, n = 0, 0
-    def add(v): nonlocal s, n; s += v; n += 1
+    # Tambahan counter untuk mencatat alasan rekomendasi
+    buy_c, sell_c, net_c = 0, 0, 0
+    
+    def add(v): 
+        nonlocal s, n, buy_c, sell_c, net_c
+        s += v; n += 1
+        if v == 1: buy_c += 1
+        elif v == -1: sell_c += 1
+        else: net_c += 1
     
     try:
         c = df["Close"]; h = df["High"]; l = df["Low"]; cn = float(c.iloc[-1])
@@ -373,10 +380,13 @@ def calc_tv(df):
         elif 0.1 < fv <= 0.5: lbl = "Beli"
         elif 0.5 < fv <= 1.0: lbl = "Beli Kuat"
         else: lbl = "Netral"
+        
+        # Format kolom alasan rekomendasi
+        reason = f"Buy: {buy_c} | Sell: {sell_c} | Netral: {net_c}"
             
-        return round(fv, 2), lbl
+        return round(fv, 2), lbl, reason
     except Exception as e:
-        return 0.0, "Netral"
+        return 0.0, "Netral", "Error/Data Kurang"
 
 # ── COMMODITY ──────────────────────────────────────────────────────────────
 def fetch_commodities():
@@ -424,18 +434,28 @@ def analyze(ticker, sector, ctx):
 
     st = calc_supertrend(df)
     custom_score, adtv = calc_custom_score(df)
-    tvs, tvl = calc_tv(df)
+    
+    # Menarik 3 variabel dari calc_tv
+    tvs, tvl, tv_reason = calc_tv(df)
+    
     comm = comm_sector(sector, ctx)
     close_now = float(df["Close"].iloc[-1])
     tgl = df.index[-1].strftime("%d-%b-%y")
 
     strat_cat = get_strategy_category(sector, close_now, adtv)
 
+    # ===== PERBAIKAN LOGIKA ACTION & WARNING =====
     warning = " (⚠️ Sepi)" if adtv < 1.0 else ""
     if st["type"] == "Supertrend Long":
-        action = f"My Long{warning}"   # Untuk entry/simpan
+        # Jika hari ini atau 1 hari lalu baru breakout -> BUY NOW
+        if st["bars"] <= 1: 
+            action = f"BUY NOW{warning}"
+        # Jika sudah rally lebih dari 1 hari -> HOLD
+        else: 
+            action = f"HOLD{warning}"
     else:
-        action = f"My Short{warning}"  # Untuk jual
+        # Jika Supertrend sedang warna merah -> SELL / WAIT
+        action = f"SELL / WAIT{warning}"
 
     return {
         "Ticker"                  : ticker,
@@ -453,6 +473,7 @@ def analyze(ticker, sector, ctx):
         "_bars"                   : st["bars"],
         "Skor TV"                 : tvs,
         "Rek TV"                  : tvl,
+        "Alasan Rek TV"           : tv_reason, # Disimpan ke dictionary hasil analisa
         "Commodity Bullish %"     : comm["pct"],
         "Commodity Context"       : comm["summary"],
     }
