@@ -234,7 +234,6 @@ def calc_supertrend(df, period=ATR_LENGTH, multiplier=FACTOR):
         return {"label": fmt_label(sb, "My Short Entry Id"), "date": fmt_date(se_dt), "type": "Supertrend Short", "bars": sb, "sl": curr_sl}
 
 # ── CUSTOM SCORE & ADTV ────────────────────────────────────────────────────
-# ── CUSTOM SCORE & ADTV ────────────────────────────────────────────────────
 def calc_custom_score(df, sector, current_price):
     score = 0
     reasons = [] # Array untuk menyimpan alasan poin
@@ -455,7 +454,7 @@ def analyze(ticker, sector, ctx):
 
     warning = " (⚠️ Sepi)" if adtv < 1.0 else ""
     if st["type"] == "Supertrend Long":
-        if st["bars"] <= 1: 
+        if st["bars"] <= 5: 
             action = f"BUY NOW{warning}"
         else: 
             action = f"HOLD{warning}"
