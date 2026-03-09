@@ -133,9 +133,6 @@ def get_ohlcv(ticker, days=DOWNLOAD_DAYS):
 
 # ── STRATEGY CLASSIFICATION ────────────────────────────────────────────────
 def get_strategy_category(sector, current_price, adtv_miliar):
-    """
-    Mengklasifikasikan strategi berdasarkan sektor, harga saham, dan likuiditas (ADTV).
-    """
     if adtv_miliar >= 50 and sector in ["IDXFINANCE", "IDXENERGY"]:
         if sector == "IDXFINANCE" and current_price >= 2000:
             return "Trend-Following"
@@ -159,7 +156,6 @@ def get_strategy_category(sector, current_price, adtv_miliar):
 
 # ── SUPERTREND LOGIC ───────────────────────────────────────────────────────
 def calc_supertrend(df, period=ATR_LENGTH, multiplier=FACTOR):
-    """Menghitung Supertrend"""
     high = df['High'].values
     low = df['Low'].values
     close = df['Close'].values
@@ -238,9 +234,10 @@ def calc_supertrend(df, period=ATR_LENGTH, multiplier=FACTOR):
         return {"label": fmt_label(sb, "My Short Entry Id"), "date": fmt_date(se_dt), "type": "Supertrend Short", "bars": sb, "sl": curr_sl}
 
 # ── CUSTOM SCORE & ADTV ────────────────────────────────────────────────────
-def calc_custom_score(df, sector):
-    """Menghitung Skor Kustom, ADTV, dan memvalidasi Kategori Strategi"""
+def calc_custom_score(df, sector, current_price):
     score = 0
+    reasons = [] # Array untuk menyimpan alasan poin
+    
     c = df["Close"]
     v = df["Volume"]
     tv = c * v  
@@ -251,16 +248,30 @@ def calc_custom_score(df, sector):
     adtv_1m = 0
     if len(tv_ma20) > 0 and pd.notna(tv_ma20.iloc[-1]):
         adtv_1m = tv_ma20.iloc[-1] / 1_000_000_000 
+        
+    # Menentukan strat_cat di dalam custom score agar bisa dipakai syarat poin
+    strat_cat = get_strategy_category(sector, current_price, adtv_1m)
     
-    # 1. Tambahan Kondisi: Jika memiliki Kategori Strategi, +1 Poin
-    close_now = float(c.iloc[-1])
-    strat_cat = get_strategy_category(sector, close_now, adtv_1m)
-    if strat_cat:
+    # 1. Syarat teks (meski tidak nambah poin, tetap dilabel)
+    if adtv_1m > 1.0:
+        reasons.append("ADTV > 1M")
+        
+    # 2. Syarat Turnover > MA20
+    if tv.iloc[-1] > tv_ma20.iloc[-1]: 
         score += 1
+        reasons.append("TV > MA20")
         
-    if tv.iloc[-1] > tv_ma20.iloc[-1]: score += 1
-    if v.iloc[-1] > v_ma20.iloc[-1]: score += 1
+    # 3. Syarat Volume > MA20
+    if v.iloc[-1] > v_ma20.iloc[-1]: 
+        score += 1
+        reasons.append("Vol > MA20")
         
+    # 4. BARU: Kategori Strategi Supertrend (Trend-Following) +1 Poin
+    if strat_cat == "Trend-Following":
+        score += 1
+        reasons.append("Cocok Supertrend")
+        
+    # 5. Syarat Ichimoku Cloud
     if len(df) >= 52:
         tenkan = (df["High"].rolling(9).max() + df["Low"].rolling(9).min()) / 2
         kijun = (df["High"].rolling(26).max() + df["Low"].rolling(26).min()) / 2
@@ -268,32 +279,28 @@ def calc_custom_score(df, sector):
         span_b = ((df["High"].rolling(52).max() + df["Low"].rolling(52).min()) / 2).shift(26)
         cloud_top = pd.concat([span_a, span_b], axis=1).max(axis=1)
         
-        if pd.notna(cloud_top.iloc[-1]) and c.iloc[-1] > cloud_top.iloc[-1]:
+        if pd.notna(cloud_top.iloc[-1]) and current_price > cloud_top.iloc[-1]:
             score += 2
+            reasons.append("Harga > Kumo")
             
-    return score, round(adtv_1m, 2), strat_cat
+    # Gabungkan alasan menjadi string yang rapi
+    reason_str = ", ".join(reasons) if reasons else "-"
+            
+    return score, round(adtv_1m, 2), strat_cat, reason_str
 
-# ── TV SCORE DENGAN KATEGORI YANG LOLOS ────────────────────────────────────
+# ── TV SCORE ───────────────────────────────────────────────────────────────
 def calc_tv(df):
     s, n = 0, 0
-    # List untuk mencatat kategori indikator yang berstatus "Buy" (+1)
-    lolos_kategori = [] 
-    
-    def add(v, name): 
-        nonlocal s, n
-        s += v; n += 1
-        # Jika hasilnya 1 (Buy), catat nama indikatornya
-        if v == 1:
-            lolos_kategori.append(name)
-    
+    # Abaikan return reason dari TV lama, tapi hitungannya dibiarkan jalan
+    def add(v): nonlocal s, n; s += v; n += 1
     try:
         c = df["Close"]; h = df["High"]; l = df["Low"]; cn = float(c.iloc[-1])
         
         for p in [10, 20, 50, 100, 200]:
             sma = c.rolling(p).mean().iloc[-1]
             ema = c.ewm(span=p, adjust=False).mean().iloc[-1]
-            if pd.notna(sma): add(1 if cn > sma else -1 if cn < sma else 0, f"SMA {p}")
-            if pd.notna(ema): add(1 if cn > ema else -1 if cn < ema else 0, f"EMA {p}")
+            if pd.notna(sma): add(1 if cn > sma else -1 if cn < sma else 0)
+            if pd.notna(ema): add(1 if cn > ema else -1 if cn < ema else 0)
 
         tk = (h.rolling(9).max() + l.rolling(9).min()) / 2
         kj = (h.rolling(26).max() + l.rolling(26).min()) / 2
@@ -302,41 +309,41 @@ def calc_tv(df):
         
         tk_0, kj_0, sa_0, sb2_0 = tk.iloc[-1], kj.iloc[-1], sa.iloc[-1], sb2.iloc[-1]
         if pd.notna(sb2_0):
-            if sa_0 > sb2_0 and kj_0 > sa_0 and tk_0 > kj_0 and cn > tk_0: add(1, "Ichimoku")
-            elif sa_0 < sb2_0 and kj_0 < sa_0 and tk_0 < kj_0 and cn < tk_0: add(-1, "Ichimoku")
-            else: add(0, "Ichimoku")
+            if sa_0 > sb2_0 and kj_0 > sa_0 and tk_0 > kj_0 and cn > tk_0: add(1)
+            elif sa_0 < sb2_0 and kj_0 < sa_0 and tk_0 < kj_0 and cn < tk_0: add(-1)
+            else: add(0)
 
         import ta as _ta
 
         rsi = _ta.momentum.RSIIndicator(c, 14).rsi()
         r0, r1 = rsi.iloc[-1], rsi.iloc[-2]
         if pd.notna(r0):
-            if r0 < 30 and r0 > r1: add(1, "RSI")
-            elif r0 > 70 and r0 < r1: add(-1, "RSI")
-            else: add(0, "RSI")
+            if r0 < 30 and r0 > r1: add(1)
+            elif r0 > 70 and r0 < r1: add(-1)
+            else: add(0)
 
         stoch = _ta.momentum.StochasticOscillator(h, l, c, window=14, smooth_window=3)
         k, d = stoch.stoch(), stoch.stoch_signal()
         k0, d0 = k.iloc[-1], d.iloc[-1]
         if pd.notna(k0) and pd.notna(d0):
-            if k0 < 20 and d0 < 20 and k0 > d0: add(1, "Stoch")
-            elif k0 > 80 and d0 > 80 and k0 < d0: add(-1, "Stoch")
-            else: add(0, "Stoch")
+            if k0 < 20 and d0 < 20 and k0 > d0: add(1)
+            elif k0 > 80 and d0 > 80 and k0 < d0: add(-1)
+            else: add(0)
 
         cci = _ta.trend.CCIIndicator(h, l, c, window=20).cci()
         c0, c1 = cci.iloc[-1], cci.iloc[-2]
         if pd.notna(c0):
-            if c0 < -100 and c0 > c1: add(1, "CCI")
-            elif c0 > 100 and c0 < c1: add(-1, "CCI")
-            else: add(0, "CCI")
+            if c0 < -100 and c0 > c1: add(1)
+            elif c0 > 100 and c0 < c1: add(-1)
+            else: add(0)
 
         adxi = _ta.trend.ADXIndicator(h, l, c, 14)
         adx, pdi, mdi = adxi.adx(), adxi.adx_pos(), adxi.adx_neg()
         av0, av1 = adx.iloc[-1], adx.iloc[-2]
         if pd.notna(av0):
-            if pdi.iloc[-1] > mdi.iloc[-1] and av0 > 20 and av0 > av1: add(1, "ADX")
-            elif pdi.iloc[-1] < mdi.iloc[-1] and av0 > 20 and av0 > av1: add(-1, "ADX")
-            else: add(0, "ADX")
+            if pdi.iloc[-1] > mdi.iloc[-1] and av0 > 20 and av0 > av1: add(1)
+            elif pdi.iloc[-1] < mdi.iloc[-1] and av0 > 20 and av0 > av1: add(-1)
+            else: add(0)
 
         ao = _ta.momentum.AwesomeOscillatorIndicator(h, l).awesome_oscillator()
         ao0, ao1, ao2 = ao.iloc[-1], ao.iloc[-2], ao.iloc[-3]
@@ -345,38 +352,37 @@ def calc_tv(df):
             zero_cross_buy = ao0 > 0 and ao1 < 0
             saucer_sell = ao0 < 0 and ao0 < ao1 and ao1 > ao2
             zero_cross_sell = ao0 < 0 and ao1 > 0
-            
-            if saucer_buy or zero_cross_buy: add(1, "AO")
-            elif saucer_sell or zero_cross_sell: add(-1, "AO")
-            else: add(0, "AO")
+            if saucer_buy or zero_cross_buy: add(1)
+            elif saucer_sell or zero_cross_sell: add(-1)
+            else: add(0)
 
         mom = c.diff(10)
         m0, m1 = mom.iloc[-1], mom.iloc[-2]
         if pd.notna(m0):
-            if m0 > m1: add(1, "Mom")
-            elif m0 < m1: add(-1, "Mom")
-            else: add(0, "Mom")
+            if m0 > m1: add(1)
+            elif m0 < m1: add(-1)
+            else: add(0)
 
         macd = _ta.trend.MACD(c)
         m_line, m_sig = macd.macd(), macd.macd_signal()
         if pd.notna(m_line.iloc[-1]):
-            if m_line.iloc[-1] > m_sig.iloc[-1]: add(1, "MACD")
-            elif m_line.iloc[-1] < m_sig.iloc[-1]: add(-1, "MACD")
-            else: add(0, "MACD")
+            if m_line.iloc[-1] > m_sig.iloc[-1]: add(1)
+            elif m_line.iloc[-1] < m_sig.iloc[-1]: add(-1)
+            else: add(0)
 
         wpr = _ta.momentum.WilliamsRIndicator(h, l, c, 14).williams_r()
         w0, w1 = wpr.iloc[-1], wpr.iloc[-2]
         if pd.notna(w0):
-            if w0 < -80 and w0 > w1: add(1, "W%R")
-            elif w0 > -20 and w0 < w1: add(-1, "W%R")
-            else: add(0, "W%R")
+            if w0 < -80 and w0 > w1: add(1)
+            elif w0 > -20 and w0 < w1: add(-1)
+            else: add(0)
 
         uo = _ta.momentum.UltimateOscillator(h, l, c).ultimate_oscillator()
         u0 = uo.iloc[-1]
         if pd.notna(u0):
-            if u0 > 70: add(1, "UO")
-            elif u0 < 30: add(-1, "UO")
-            else: add(0, "UO")
+            if u0 > 70: add(1)
+            elif u0 < 30: add(-1)
+            else: add(0)
 
         fv = s / n if n > 0 else 0
         
@@ -386,13 +392,10 @@ def calc_tv(df):
         elif 0.1 < fv <= 0.5: lbl = "Beli"
         elif 0.5 < fv <= 1.0: lbl = "Beli Kuat"
         else: lbl = "Netral"
-        
-        # Susun kategori yang lolos
-        reason = ", ".join(lolos_kategori) if lolos_kategori else "-"
             
-        return round(fv, 2), lbl, reason
+        return round(fv, 2), lbl, "-"
     except Exception as e:
-        return 0.0, "Netral", "Error/Data Kurang"
+        return 0.0, "Netral", "-"
 
 # ── COMMODITY ──────────────────────────────────────────────────────────────
 def fetch_commodities():
@@ -438,21 +441,24 @@ def analyze(ticker, sector, ctx):
     if df is None or len(df) < max(ATR_LENGTH, 52)+2:
         print(f"    [skip] {ticker}"); return None
 
-    st = calc_supertrend(df)
-    
-    # Strat cat ditarik langsung dari calc_custom_score
-    custom_score, adtv, strat_cat = calc_custom_score(df, sector)
-    tvs, tvl, tv_reason = calc_tv(df)
-    
-    comm = comm_sector(sector, ctx)
     close_now = float(df["Close"].iloc[-1])
     tgl = df.index[-1].strftime("%d-%b-%y")
 
+    # Menerima data strat_cat & list string score dari calc_custom_score
+    custom_score, adtv, strat_cat, skor_reasons = calc_custom_score(df, sector, close_now)
+    
+    st = calc_supertrend(df)
+    tvs, tvl, _ = calc_tv(df)
+    comm = comm_sector(sector, ctx)
+
     warning = " (⚠️ Sepi)" if adtv < 1.0 else ""
     if st["type"] == "Supertrend Long":
-        action = f"My Long{warning}"   
+        if st["bars"] <= 1: 
+            action = f"BUY NOW{warning}"
+        else: 
+            action = f"HOLD{warning}"
     else:
-        action = f"My Short{warning}"  
+        action = f"SELL / WAIT{warning}"
 
     return {
         "Ticker"                  : ticker,
@@ -470,7 +476,7 @@ def analyze(ticker, sector, ctx):
         "_bars"                   : st["bars"],
         "Skor TV"                 : tvs,
         "Rek TV"                  : tvl,
-        "Alasan Rek TV"           : tv_reason,
+        "Alasan Rek TV"           : skor_reasons, # Menyimpan list "ADTV > 1M, Vol > MA20, Cocok Supertrend" dsb.
         "Commodity Bullish %"     : comm["pct"],
         "Commodity Context"       : comm["summary"],
     }
