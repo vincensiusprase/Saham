@@ -97,8 +97,8 @@ def gsheet(name):
 
 # ── DATA DOWNLOAD ──────────────────────────────────────────────────────────
 def get_ohlcv(ticker, days=DOWNLOAD_DAYS):
-    # PERBAIKAN: Menambah 1 hari agar yfinance mendownload hari ini (exclusive batas akhirnya)
-    end   = datetime.today() + timedelta(days=1)
+    # KEMBALI SEPERTI SEMULA: Tidak di-plus 1 hari untuk yfinance end date
+    end   = datetime.today()
     start = end - timedelta(days=days)
 
     try:
@@ -226,7 +226,7 @@ def calc_supertrend(df, period=ATR_LENGTH, multiplier=FACTOR):
 
     def fmt_date(dt):
         if dt is None: return "-"
-        # PERBAIKAN: Menambah 1 hari ke tampilan tanggal Breakout
+        # PERBAIKAN: HANYA TAMPILAN teks tanggalnya saja yang di +1 hari
         return (pd.Timestamp(dt) + pd.Timedelta(days=1)).strftime('%d-%b-%y')
 
     lb = le_b if le_b is not None else 999999
