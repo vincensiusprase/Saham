@@ -33,16 +33,16 @@ TICKERS = {
         "Crude Oil": {"ticker": "CL=F", "currency": "USD", "currency_name": "US Dollar"},
         "Brent Oil": {"ticker": "BZ=F", "currency": "USD", "currency_name": "US Dollar"},
         "CPO": {"ticker": "FCPO.KL", "currency": "MYR", "currency_name": "Malaysian Ringgit"},
-        "Newcastle Coal": {"ticker": "MTF=F", "currency": "USD", "currency_name": "US Dollar"}, 
+        "Newcastle Coal (Proxy)": {"ticker": "WHC.AX", "currency": "AUD", "currency_name": "Australian Dollar"}, 
         "XAU Gold": {"ticker": "XAUUSD=X", "currency": "USD", "currency_name": "US Dollar"},    
         "Silver": {"ticker": "XAGUSD=X", "currency": "USD", "currency_name": "US Dollar"},      
         "Nickel": {"ticker": "NI=F", "currency": "USD", "currency_name": "US Dollar"},          
         "Gas": {"ticker": "NG=F", "currency": "USD", "currency_name": "US Dollar"},             
         "Alumunium": {"ticker": "ALI=F", "currency": "USD", "currency_name": "US Dollar"},      
-        "Copper": {"ticker": "HG=F", "currency": "USD", "currency_name": "US Dollar"},          
+        "Copper (ETF)": {"ticker": "CPER", "currency": "USD", "currency_name": "US Dollar"},          
         "Rubber": {"ticker": "TSR20.SI", "currency": "USD", "currency_name": "US Dollar"},      
-        "Tin": {"ticker": "JJT", "currency": "USD", "currency_name": "US Dollar"},              
-        "Zinc": {"ticker": "ZNC=F", "currency": "USD", "currency_name": "US Dollar"}            
+        "Tin (Proxy)": {"ticker": "MSC.KL", "currency": "MYR", "currency_name": "Malaysian Ringgit"},              
+        "Zinc (Proxy)": {"ticker": "TECK", "currency": "USD", "currency_name": "US Dollar"}            
     }
 }
 
