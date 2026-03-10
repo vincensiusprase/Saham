@@ -236,13 +236,17 @@ def get_strategy_category(sector, current_price, adtv_miliar):
     else:
         return "Trend-Following"
 
-# ── CHANNEL BREAKOUT (PERBAIKAN AKURASI) ───────────────────────────────────
+# ── CHANNEL BREAKOUT ────────────────────
 def calc_cb(df):
+    # Batas atas dan bawah tetap menggunakan High dan Low masa lalu (Classic Donchian)
     up   = df["High"].rolling(LENGTH).max().shift(1)
     down = df["Low"].rolling(LENGTH).min().shift(1)
 
-    le_condition = df["High"] > up
-    se_condition = df["Low"]  < down
+    # FIX: Gunakan df["Close"] untuk trigger entry. 
+    # Breakout hanya valid jika harga "Ditutup" di luar channel.
+    # Ini 99% akan menghilangkan false signal akibat wick/jarum error di yfinance.
+    le_condition = df["Close"] > up
+    se_condition = df["Close"] < down
 
     df_sig = pd.DataFrame(index=df.index)
     conditions = [le_condition, se_condition]
@@ -286,7 +290,6 @@ def calc_cb(df):
         return {"label": fmt_label(lb, "My Long Entry Id"), "date": fmt_date(le_dt), "type": "CB Long", "bars": lb, "sl": curr_sl}
     else:
         return {"label": fmt_label(sb, "My Short Entry Id"), "date": fmt_date(se_dt), "type": "CB Short", "bars": sb, "sl": curr_sl}
-
 
 # ── CUSTOM SCORE & ADTV ────────────────────────────────────────────────────
 def calc_custom_score(df, sector, current_price):
