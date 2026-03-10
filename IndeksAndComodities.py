@@ -12,9 +12,9 @@ warnings.filterwarnings("ignore")
 
 # ── CONFIG ─────────────────────────────────────────────────────────────────
 SPREADSHEET_ID = "11CTr-xGnEPdhozhBPsjXRyqqP_VgmCKt8cUCry2EdSc"
-SHEET_1_NAME = "Sheet1_Harga"
-SHEET_2_NAME = "Sheet2_Indikator"
-SHEET_3_NAME = "Sheet3_MataUang"  # Sheet baru untuk referensi mata uang
+SHEET_1_NAME = "Harga"
+SHEET_2_NAME = "Indikator"
+SHEET_3_NAME = "MataUang"  # Sheet baru untuk referensi mata uang
 
 # Mapping Ticker Yahoo Finance & Mata Uang
 TICKERS = {
