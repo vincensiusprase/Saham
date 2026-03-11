@@ -34,9 +34,9 @@ TICKERS = {
         "Brent Oil": {"ticker": "BZ=F", "currency": "USD", "currency_name": "US Dollar"},
         "CPO": {"ticker": "FCPO.KL", "currency": "MYR", "currency_name": "Malaysian Ringgit"},
         "Newcastle Coal (Proxy)": {"ticker": "WHC.AX", "currency": "AUD", "currency_name": "Australian Dollar"}, 
-        "XAU Gold": {"ticker": "XAUUSD=X", "currency": "USD", "currency_name": "US Dollar"},    
-        "Silver": {"ticker": "XAGUSD=X", "currency": "USD", "currency_name": "US Dollar"},      
-        "Nickel": {"ticker": "NI=F", "currency": "USD", "currency_name": "US Dollar"},          
+        "Gold": {"ticker": "GC=F", "currency": "USD", "currency_name": "US Dollar"},    
+        "Silver": {"ticker": "SI=F", "currency": "USD", "currency_name": "US Dollar"},      
+        "Nickel (Proxy)": {"ticker": "VALE", "currency": "USD", "currency_name": "US Dollar"},          
         "Gas": {"ticker": "NG=F", "currency": "USD", "currency_name": "US Dollar"},             
         "Alumunium": {"ticker": "ALI=F", "currency": "USD", "currency_name": "US Dollar"},      
         "Copper (ETF)": {"ticker": "CPER", "currency": "USD", "currency_name": "US Dollar"},          
@@ -134,14 +134,8 @@ def fetch_and_process_data():
     full_df = pd.concat(all_data, ignore_index=True)
     
     # ── PERBAIKAN LOGIKA PERCENTAGE CHANGE ──
-    # 1. Buat kalender pivot Harga utuh terlebih dahulu
     price_pivot = full_df.pivot(index='Date', columns='Asset_Name', values='Close')
-    
-    # 2. Forward fill Harga (Tanggal libur pakai harga hari sebelumnya)
     price_pivot = price_pivot.ffill()
-    
-    # 3. Hitung % Change HARIAN setelah kalender disamakan dan harga di-fill
-    # Jika hari ini libur, harga = harga kemarin, maka perubahannya pasti 0% (akurat)
     pct_pivot = price_pivot.pct_change() * 100
     
     # ── SHEET 1: WIDE FORMAT ──
@@ -150,12 +144,11 @@ def fetch_and_process_data():
     
     sheet1_df = pd.concat([price_pivot, pct_pivot_renamed], axis=1)
     sheet1_df = sheet1_df.reindex(sorted(sheet1_df.columns), axis=1).reset_index()
-    sheet1_df = sheet1_df.dropna(subset=[pct_pivot_renamed.columns[0]]) # Buang baris pertama (karena NaN akibat pct_change)
+    sheet1_df = sheet1_df.dropna(subset=[pct_pivot_renamed.columns[0]]) 
     sheet1_df = sheet1_df.round(2)
     sheet1_df['Date'] = sheet1_df['Date'].dt.strftime('%Y-%m-%d')
 
     # ── SHEET 2: LONG FORMAT ──
-    # Map kembali pct_change yang sudah akurat ke data long format
     pct_long = pct_pivot.reset_index().melt(id_vars='Date', var_name='Asset_Name', value_name='Pct_Change')
     full_df = pd.merge(full_df, pct_long, on=['Date', 'Asset_Name'], how='left')
 
