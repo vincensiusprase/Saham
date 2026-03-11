@@ -1,5 +1,5 @@
 """
-IHSG Channel Breakout Screener v5.0 (Complete Trading System - Trial 10 Tickers)
+IHSG Channel Breakout Screener v5.0
 =============================================================
 Strategy: Channel Breakout (Donchian Channel style)
 """
@@ -20,7 +20,7 @@ warnings.filterwarnings("ignore")
 SPREADSHEET_ID  = "1qhEZkfdtEGDEA5tWTVCeOahOXDso3H4O7B69xkOREDA"
 SUMMARY_SHEET   = "SCREENER"
 SERVICE_ACCOUNT = "service_account.json"
-LENGTH          = 20  # Menggantikan ATR_LENGTH & FACTOR
+LENGTH          = 5  # Menggantikan ATR_LENGTH & FACTOR
 DOWNLOAD_DAYS   = 365
 WIB             = timezone(timedelta(hours=7))
 
