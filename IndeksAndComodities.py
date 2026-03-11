@@ -94,12 +94,9 @@ def fetch_and_process_data():
                 
             df.index = pd.to_datetime(df.index).tz_localize(None)
             
-            # Normalisasi kolom harga & Kalkulasi % Change
+            # Normalisasi kolom harga
             if 'Close' not in df.columns and 'Adj Close' in df.columns:
                 df['Close'] = df['Adj Close']
-            
-            # Menghitung Persentase Perubahan Harian
-            df['Pct_Change'] = df['Close'].pct_change() * 100
             
             # Indikator Teknikal
             c = df['Close']
@@ -136,21 +133,32 @@ def fetch_and_process_data():
 
     full_df = pd.concat(all_data, ignore_index=True)
     
-    # ── SHEET 1: WIDE FORMAT (Harga & % Change Berdampingan) ──
-    # Pivot untuk Harga
+    # ── PERBAIKAN LOGIKA PERCENTAGE CHANGE ──
+    # 1. Buat kalender pivot Harga utuh terlebih dahulu
     price_pivot = full_df.pivot(index='Date', columns='Asset_Name', values='Close')
-    # Pivot untuk % Change
-    pct_pivot = full_df.pivot(index='Date', columns='Asset_Name', values='Pct_Change')
-    pct_pivot.columns = [f"{col} %Chg" for col in pct_pivot.columns]
     
-    # Gabungkan dan Urutkan kolom agar alfabetis (Aset A, Aset A %Chg, Aset B, Aset B %Chg)
-    sheet1_df = pd.concat([price_pivot, pct_pivot], axis=1)
+    # 2. Forward fill Harga (Tanggal libur pakai harga hari sebelumnya)
+    price_pivot = price_pivot.ffill()
+    
+    # 3. Hitung % Change HARIAN setelah kalender disamakan dan harga di-fill
+    # Jika hari ini libur, harga = harga kemarin, maka perubahannya pasti 0% (akurat)
+    pct_pivot = price_pivot.pct_change() * 100
+    
+    # ── SHEET 1: WIDE FORMAT ──
+    pct_pivot_renamed = pct_pivot.copy()
+    pct_pivot_renamed.columns = [f"{col} %Chg" for col in pct_pivot_renamed.columns]
+    
+    sheet1_df = pd.concat([price_pivot, pct_pivot_renamed], axis=1)
     sheet1_df = sheet1_df.reindex(sorted(sheet1_df.columns), axis=1).reset_index()
-    
-    sheet1_df = sheet1_df.sort_values('Date').ffill().round(2)
+    sheet1_df = sheet1_df.dropna(subset=[pct_pivot_renamed.columns[0]]) # Buang baris pertama (karena NaN akibat pct_change)
+    sheet1_df = sheet1_df.round(2)
     sheet1_df['Date'] = sheet1_df['Date'].dt.strftime('%Y-%m-%d')
 
-    # ── SHEET 2: LONG FORMAT (Dashboard Indikator Teknikal) ──
+    # ── SHEET 2: LONG FORMAT ──
+    # Map kembali pct_change yang sudah akurat ke data long format
+    pct_long = pct_pivot.reset_index().melt(id_vars='Date', var_name='Asset_Name', value_name='Pct_Change')
+    full_df = pd.merge(full_df, pct_long, on=['Date', 'Asset_Name'], how='left')
+
     sheet2_cols = ['Date', 'Category', 'Asset_Name', 'Close', 'Pct_Change', 'EMA9', 'EMA20', 'EMA50', 'EMA200', 
                    'Tenkan_Sen', 'Kijun_Sen', 'Senkou_Span_A', 'Senkou_Span_B']
     sheet2_df = full_df[sheet2_cols].copy()
