@@ -279,7 +279,7 @@ def calc_cb(df):
 
     def fmt_date(dt):
         if dt is None: return "-"
-        return (pd.Timestamp(dt) + pd.Timedelta(days=1)).strftime('%d-%b-%y')
+        return (pd.Timestamp(dt) + pd.Timedelta(days=0)).strftime('%d-%b-%y')
 
     lb = le_b if le_b is not None else 999999
     sb = se_b if se_b is not None else 999999
