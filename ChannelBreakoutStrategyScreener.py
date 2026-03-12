@@ -202,10 +202,10 @@ def gsheet(name):
 
 # ── DATA DOWNLOAD ──────────────────────────────────────────────────────────
 def get_ohlcv(ticker, days=DOWNLOAD_DAYS):
-    end   = datetime.today()
+    end   = datetime.now(WIB) + timedelta(days=1)
     start = end - timedelta(days=days)
 
-    try:
+try:
         df = yf.download(
             ticker,
             start=start.strftime("%Y-%m-%d"),
@@ -297,7 +297,7 @@ def calc_cb(df):
     se_dt, se_b = get_last_signal(df_sig['entry_short'])
 
     def fmt_label(bars, lbl):
-        ago = "hari ini" if bars == 0 else f"{bars} bar lalu"
+        ago = "Bar Terakhir (0)" if bars == 0 else f"{bars} bar lalu"
         return f"{lbl} ({ago})"
 
     def fmt_date(dt):
