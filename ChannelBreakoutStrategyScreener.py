@@ -205,7 +205,7 @@ def get_ohlcv(ticker, days=DOWNLOAD_DAYS):
     end   = datetime.now(WIB) + timedelta(days=1)
     start = end - timedelta(days=days)
 
-try:
+    try:
         df = yf.download(
             ticker,
             start=start.strftime("%Y-%m-%d"),
@@ -235,7 +235,7 @@ try:
     df.index = pd.to_datetime(df.index)
     df.sort_index(inplace=True)
     return df
-
+        
 # ── STRATEGY CLASSIFICATION ────────────────────────────────────────────────
 def get_strategy_category(sector, current_price, adtv_miliar):
     if adtv_miliar >= 50 and sector in ["IDXFINANCE", "IDXENERGY"]:
