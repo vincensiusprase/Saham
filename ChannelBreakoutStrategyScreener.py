@@ -268,8 +268,8 @@ def calc_cb(df):
     # FIX: Gunakan df["Close"] untuk trigger entry. 
     # Breakout hanya valid jika harga "Ditutup" di luar channel.
     # Ini 99% akan menghilangkan false signal akibat wick/jarum error di yfinance.
-    le_condition = df["Close"] > up
-    se_condition = df["Close"] < down
+    le_condition = df["High"] > up
+    se_condition = df["Low"] < down
 
     df_sig = pd.DataFrame(index=df.index)
     conditions = [le_condition, se_condition]
