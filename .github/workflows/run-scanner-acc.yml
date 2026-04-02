@@ -1,10 +1,11 @@
-name: Run Market Scanner Accum
+name: Run Market Scanner Keltner Channel Strategy
 
 on:
   schedule:
-    - cron: "30 10 * * 5"   # Jumat 17:30 WIB (10:30 UTC)
+    - cron: "0 5 * * 1-5"    # 12:00 WIB (05:00 UTC) Senin–Jumat
+    - cron: "0 10 * * 1-5"   # 17:00 WIB (10:00 UTC) Senin–Jumat  workflow_dispatch:
   workflow_dispatch:
-
+    
 jobs:
   run-script:
     runs-on: ubuntu-latest
@@ -25,4 +26,4 @@ jobs:
       - name: Run Script
         env:
           GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
-        run: python ScannerAkumulasi.py
+        run: python ScannerKC.py
