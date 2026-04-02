@@ -1,5 +1,5 @@
 # ==========================================
-# MARKET SCANNER - PRO (KELTNER + VWAP + HA + UT BOT)
+# MARKET SCANNER - PRO (KELTNER + VWAP + HA + UT BOT + RUBBER BAND)
 # ==========================================
 
 import numpy as np
@@ -82,6 +82,9 @@ def analyze_sector(sector_name, ticker_list):
 
             df['KCUe_20_2'] = df['EMA_20'] + (2.0 * df['ATR_10'])
             df['KCLe_20_2'] = df['EMA_20'] - (2.0 * df['ATR_10'])
+            
+            # INI BARIS YANG TERTINGGAL SEBELUMNYA:
+            df['KCMa_20_2'] = df['EMA_20'] 
 
             # ==============================
             # 2. VWAP BANDS (ANCHOR: WEEKLY)
@@ -108,23 +111,19 @@ def analyze_sector(sector_name, ticker_list):
             # ==============================
             # 3. HEIKIN ASHI CANDLES
             # ==============================
-            # HA Close = (O + H + L + C) / 4
             df['HA_Close'] = (df['Open'] + df['High'] + df['Low'] + df['Close']) / 4
             
-            # HA Open = (Prev HA_Open + Prev HA_Close) / 2
             ha_open = np.zeros(len(df))
             ha_open[0] = (df['Open'].iloc[0] + df['Close'].iloc[0]) / 2
             for i in range(1, len(df)):
                 ha_open[i] = (ha_open[i-1] + df['HA_Close'].iloc[i-1]) / 2
             df['HA_Open'] = ha_open
             
-            # Status Warna HA
             ha_status = "🟢 BULL (Hijau)" if df['HA_Close'].iloc[-1] > df['HA_Open'].iloc[-1] else "🔴 BEAR (Merah)"
 
             # ==============================
             # 4. UT BOT ALGORITHM (Key: 1, ATR: 10)
             # ==============================
-            # Menggunakan ATR_10 yang sudah dihitung di atas
             df['nLoss'] = 1.0 * df['ATR_10'] 
             
             trail_stop = np.zeros(len(df))
@@ -136,7 +135,6 @@ def analyze_sector(sector_name, ticker_list):
             trail_stop[0] = closes[0]
             trend[0] = 1
             
-            # Loop Supertrend Inti untuk UT Bot
             for i in range(1, len(df)):
                 if np.isnan(nLosses[i]):
                     trail_stop[i] = closes[i]
@@ -165,7 +163,6 @@ def analyze_sector(sector_name, ticker_list):
                         
             df['UT_Trend'] = trend
             
-            # Ekstraksi Sinyal UT Bot Hari Ini vs Kemarin
             trend_now = trend[-1]
             trend_prev = trend[-2]
             
@@ -178,12 +175,12 @@ def analyze_sector(sector_name, ticker_list):
             else:
                 ut_signal = "🔽 Hold SELL"
 
-# ==============================
-            # 5. EKSTRAKSI DATA & LOGIKA SCORING (RUBBER BAND 10% SETUP)
+            # ==============================
+            # 5. EKSTRAKSI DATA & LOGIKA SCORING (RUBBER BAND)
             # ==============================
             price_today = float(df["Close"].iloc[-1])
             upper_kc = float(df['KCUe_20_2'].iloc[-1])
-            middle_kc = float(df['KCMa_20_2'].iloc[-1]) # Ini adalah EMA 20 (Target TP Rasional)
+            middle_kc = float(df['KCMa_20_2'].iloc[-1]) 
             lower_kc = float(df['KCLe_20_2'].iloc[-1])
             
             vwap_today = float(df['VWAP'].iloc[-1])
@@ -192,21 +189,15 @@ def analyze_sector(sector_name, ticker_list):
             
             atr_today = float(df['ATR_10'].iloc[-1])
             
-            # --- KALKULASI TARGET 10% ---
-            # Mengubah nilai ATR menjadi Persentase Volatilitas
             atr_pct = (atr_today / price_today) * 100
-            
-            # Mengukur potensi kenaikan dari harga jatuh saat ini kembali ke EMA 20
             potensi_tp_pct = ((middle_kc - price_today) / price_today) * 100
             target_tp_price = middle_kc
 
-            # --- LOGIKA SCORING ---
             score = 0
             kc_status = "⚪ INSIDE KC"
             vwap_status = "⚪ DALAM BATAS WAJAR"
             action = "WAIT"
 
-            # 1. Deteksi Keltner Channel
             for i in range(1, 5):
                 try:
                     p_close = float(df["Close"].iloc[-i])
@@ -226,7 +217,6 @@ def analyze_sector(sector_name, ticker_list):
                         break
                 except: continue
 
-            # 2. Deteksi VWAP & Setup Rubber Band (The 10% Setup)
             is_deep_oversold = (price_today < lower_kc) and (price_today < vwap_lower_today)
 
             if price_today > vwap_upper_today:
@@ -236,10 +226,9 @@ def analyze_sector(sector_name, ticker_list):
                 
             elif is_deep_oversold:
                 vwap_status = "🧊 DEEP OVERSOLD (Bawah KC & VWAP)"
-                # Syarat Mutlak Anda: ATR Tinggi (>3%) dan Jarak ke Tengah > 10%
                 if atr_pct >= 3.0 and potensi_tp_pct >= 10.0:
                     action = "🎯 RUBBER BAND SETUP (Target >10%)"
-                    score += 80 # Poin sangat besar karena ini setup yang Anda cari
+                    score += 80 
                 else:
                     action = "🧊 OVERSOLD (Pantulan Kecil)"
                     score += 20
@@ -248,16 +237,14 @@ def analyze_sector(sector_name, ticker_list):
                 if "PULLBACK" in action: action = "💎 SNIPER ENTRY"
                 score -= 20
                 
-            # 3. Filter Konfirmasi Kematian: Jangan beli pisau jatuh tanpa Heikin Ashi Hijau
             if "RUBBER BAND" in action or "SNIPER" in action:
                 if "BULL" in ha_status:
-                    score += 50 # Konfirmasi pantulan valid
+                    score += 50 
                     action = "🟢 " + action + " + HA CONFIRMED"
                 else:
                     action = "⏳ WAIT " + action + " (Tunggu HA Hijau)"
-                    score -= 40 # Penalti karena pisau masih jatuh
+                    score -= 40 
 
-            # Simpan Hasil
             results.append({
                 "Ticker": ticker,
                 "Action": action,
@@ -278,7 +265,6 @@ def analyze_sector(sector_name, ticker_list):
 
     df_result = pd.DataFrame(results)
 
-    # Sesuaikan urutan kolom untuk Google Sheets
     desired_order = [
         "Ticker", "Action", "Score", "Harga Skrg", "Target TP", "Potensi TP (%)", "ATR (%)",
         "Status Keltner", "Status VWAP", "Heikin Ashi", "UT Bot (1,10)", "Last Update"
