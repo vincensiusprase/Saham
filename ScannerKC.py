@@ -2,6 +2,7 @@
 # MARKET SCANNER - PRO (KELTNER CHANNEL BREAKOUT)
 # ==========================================
 
+import numpy as np
 import yfinance as yf
 import pandas as pd
 import ta
