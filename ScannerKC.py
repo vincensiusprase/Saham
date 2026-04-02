@@ -18,7 +18,7 @@ from google.oauth2.service_account import Credentials
 warnings.filterwarnings('ignore')
 
 # Ganti dengan Spreadsheet ID Anda
-SPREADSHEET_ID = "1I_SJ3InMZPiSS1XibF-w000lwjc1PIsRaJ_kXzQ3LxE"
+SPREADSHEET_ID = "1CVHTapflLP1Lypr_Q1KXC0I9qPHCnpDYNKHdYx31kh0"
 
 # ==========================================
 # GOOGLE SHEET CONNECTION
