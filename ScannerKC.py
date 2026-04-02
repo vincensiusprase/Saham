@@ -178,23 +178,35 @@ def analyze_sector(sector_name, ticker_list):
             else:
                 ut_signal = "🔽 Hold SELL"
 
-            # ==============================
-            # 5. EKSTRAKSI DATA & LOGIKA SCORING
+# ==============================
+            # 5. EKSTRAKSI DATA & LOGIKA SCORING (RUBBER BAND 10% SETUP)
             # ==============================
             price_today = float(df["Close"].iloc[-1])
             upper_kc = float(df['KCUe_20_2'].iloc[-1])
+            middle_kc = float(df['KCMa_20_2'].iloc[-1]) # Ini adalah EMA 20 (Target TP Rasional)
             lower_kc = float(df['KCLe_20_2'].iloc[-1])
             
             vwap_today = float(df['VWAP'].iloc[-1])
             vwap_upper_today = float(df['VWAP_Upper'].iloc[-1])
             vwap_lower_today = float(df['VWAP_Lower'].iloc[-1])
             
+            atr_today = float(df['ATR_10'].iloc[-1])
+            
+            # --- KALKULASI TARGET 10% ---
+            # Mengubah nilai ATR menjadi Persentase Volatilitas
+            atr_pct = (atr_today / price_today) * 100
+            
+            # Mengukur potensi kenaikan dari harga jatuh saat ini kembali ke EMA 20
+            potensi_tp_pct = ((middle_kc - price_today) / price_today) * 100
+            target_tp_price = middle_kc
+
+            # --- LOGIKA SCORING ---
             score = 0
             kc_status = "⚪ INSIDE KC"
-            vwap_status = "⚪ DALAM BATAS WAJAR VWAP"
+            vwap_status = "⚪ DALAM BATAS WAJAR"
             action = "WAIT"
 
-            # Logika Keltner Channel
+            # 1. Deteksi Keltner Channel
             for i in range(1, 5):
                 try:
                     p_close = float(df["Close"].iloc[-i])
@@ -214,21 +226,36 @@ def analyze_sector(sector_name, ticker_list):
                         break
                 except: continue
 
-            # Logika VWAP Bands
+            # 2. Deteksi VWAP & Setup Rubber Band (The 10% Setup)
+            is_deep_oversold = (price_today < lower_kc) and (price_today < vwap_lower_today)
+
             if price_today > vwap_upper_today:
                 vwap_status = "🔥 OVERVALUED (Tembus VWAP Atas)"
                 if "BUY" in action: action = "⚠️ RAWAN KOREKSI (Take Profit)"
                 score += 20
+                
+            elif is_deep_oversold:
+                vwap_status = "🧊 DEEP OVERSOLD (Bawah KC & VWAP)"
+                # Syarat Mutlak Anda: ATR Tinggi (>3%) dan Jarak ke Tengah > 10%
+                if atr_pct >= 3.0 and potensi_tp_pct >= 10.0:
+                    action = "🎯 RUBBER BAND SETUP (Target >10%)"
+                    score += 80 # Poin sangat besar karena ini setup yang Anda cari
+                else:
+                    action = "🧊 OVERSOLD (Pantulan Kecil)"
+                    score += 20
             elif price_today < vwap_lower_today:
                 vwap_status = "🧊 UNDERVALUED (Tembus VWAP Bawah)"
                 if "PULLBACK" in action: action = "💎 SNIPER ENTRY"
                 score -= 20
                 
-            # Logika Konfirmasi UT Bot & HA ke dalam Score
-            if ut_signal == "🟢 BUY" and "BULL" in ha_status:
-                score += 30 # Konfirmasi kuat jika UT Bot & Heikin Ashi selaras hijau
-            elif ut_signal == "🔴 SELL" and "BEAR" in ha_status:
-                score -= 30
+            # 3. Filter Konfirmasi Kematian: Jangan beli pisau jatuh tanpa Heikin Ashi Hijau
+            if "RUBBER BAND" in action or "SNIPER" in action:
+                if "BULL" in ha_status:
+                    score += 50 # Konfirmasi pantulan valid
+                    action = "🟢 " + action + " + HA CONFIRMED"
+                else:
+                    action = "⏳ WAIT " + action + " (Tunggu HA Hijau)"
+                    score -= 40 # Penalti karena pisau masih jatuh
 
             # Simpan Hasil
             results.append({
@@ -236,18 +263,16 @@ def analyze_sector(sector_name, ticker_list):
                 "Action": action,
                 "Score": score,
                 "Harga Skrg": int(price_today),
+                "Target TP": int(target_tp_price),
+                "Potensi TP (%)": round(potensi_tp_pct, 2),
+                "ATR (%)": round(atr_pct, 2),
                 "Status Keltner": kc_status,
                 "Status VWAP": vwap_status,
                 "Heikin Ashi": ha_status,
                 "UT Bot (1,10)": ut_signal,
-                "VWAP Upper": int(vwap_upper_today),
-                "VWAP": int(vwap_today),
-                "VWAP Lower": int(vwap_lower_today),
-                "Upper KC": int(upper_kc),
-                "Lower KC": int(lower_kc),
                 "Last Update": waktu_update
             })
-
+            
         except Exception as e:
             print(f"  -> Kalkulasi gagal untuk {ticker}: {e}")
 
@@ -255,9 +280,8 @@ def analyze_sector(sector_name, ticker_list):
 
     # Sesuaikan urutan kolom untuk Google Sheets
     desired_order = [
-        "Ticker", "Action", "Score", "Harga Skrg", "Status Keltner", "Status VWAP", 
-        "Heikin Ashi", "UT Bot (1,10)", "VWAP Upper", "VWAP", "VWAP Lower", 
-        "Upper KC", "Lower KC", "Last Update"
+        "Ticker", "Action", "Score", "Harga Skrg", "Target TP", "Potensi TP (%)", "ATR (%)",
+        "Status Keltner", "Status VWAP", "Heikin Ashi", "UT Bot (1,10)", "Last Update"
     ]
     
     if not df_result.empty:
