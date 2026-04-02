@@ -58,7 +58,7 @@ def analyze_sector(sector_name, ticker_list):
 
     for ticker in ticker_list:
         try:
-            # Download data 60 hari ke belakang
+            # Download data
             df = yf.download(ticker, period="60d", interval="1d", progress=False, auto_adjust=True, threads=False)
 
             if isinstance(df.columns, pd.MultiIndex):
@@ -67,75 +67,108 @@ def analyze_sector(sector_name, ticker_list):
             if df.empty or len(df) < 30: 
                 continue
 
-            # Hitung Keltner Channel
+            # ==============================
+            # 1. KELTNER CHANNEL (EMA 20, ATR 10)
+            # ==============================
             kc = df.ta.kc(length=20, scalar=2, mamode="ema")
             df = pd.concat([df, kc], axis=1)
 
-            # Data Hari Ini (Untuk perhitungan jarak real-time)
-            price_today = float(df["Close"].iloc[-1])
-            upper_today = float(df['KCUe_20_2'].iloc[-1])
-            lower_today = float(df['KCLe_20_2'].iloc[-1])
-            middle_today = float(df['KCMa_20_2'].iloc[-1])
+            # ==============================
+            # 2. VWAP BANDS CALCULATION (ANCHOR: MONTHLY)
+            # Source: (H+L+C)/3, Offset: 0
+            # ==============================
+            # Buat penanda bulan untuk Anchoring
+            df['Month'] = df.index.to_period('M')
+            
+            # Typical Price & Volume Berbobot
+            df['TP'] = (df['High'] + df['Low'] + df['Close']) / 3
+            df['TPV'] = df['TP'] * df['Volume']
 
-            jarak_ke_upper = ((upper_today - price_today) / price_today) * 100
-            jarak_ke_lower = ((price_today - lower_today) / price_today) * 100
+            # Cumulative TPV & Volume per Bulan (Sesuai rumus VWAP)
+            df['Cum_TPV'] = df.groupby('Month')['TPV'].cumsum()
+            df['Cum_Vol'] = df.groupby('Month')['Volume'].cumsum()
+            
+            # Garis Tengah VWAP
+            df['VWAP'] = df['Cum_TPV'] / df['Cum_Vol']
+
+            # Perhitungan Standar Deviasi untuk Bands
+            df['Dev'] = df['TP'] - df['VWAP']
+            df['Dev_Sq_Vol'] = (df['Dev'] ** 2) * df['Volume']
+            df['Cum_Dev_Sq_Vol'] = df.groupby('Month')['Dev_Sq_Vol'].cumsum()
+            df['VWAP_Variance'] = df['Cum_Dev_Sq_Vol'] / df['Cum_Vol']
+            df['VWAP_Stdev'] = np.sqrt(df['VWAP_Variance'])
+
+            # Upper dan Lower VWAP Band (Multiplier = 2.0)
+            vwap_mult = 2.0
+            df['VWAP_Upper'] = df['VWAP'] + (vwap_mult * df['VWAP_Stdev'])
+            df['VWAP_Lower'] = df['VWAP'] - (vwap_mult * df['VWAP_Stdev'])
 
             # ==============================
-            # LOOKBACK WINDOW LOGIC (0 - 3 Hari Lalu)
+            # 3. EKSTRAKSI DATA HARI INI
+            # ==============================
+            price_today = float(df["Close"].iloc[-1])
+            upper_kc = float(df['KCUe_20_2'].iloc[-1])
+            lower_kc = float(df['KCLe_20_2'].iloc[-1])
+            
+            vwap_today = float(df['VWAP'].iloc[-1])
+            vwap_upper_today = float(df['VWAP_Upper'].iloc[-1])
+            vwap_lower_today = float(df['VWAP_Lower'].iloc[-1])
+
+            # ==============================
+            # 4. LOGIKA SCORING (KC + VWAP)
             # ==============================
             score = 0
-            status = "⚪ INSIDE CHANNEL"
+            kc_status = "⚪ INSIDE KC"
+            vwap_status = "⚪ DALAM BATAS WAJAR VWAP"
             action = "WAIT"
 
-            # Looping dari indeks -1 (Hari Ini) sampai -4 (3 Hari Lalu)
+            # Logika Keltner Channel
             for i in range(1, 5):
                 try:
                     p_close = float(df["Close"].iloc[-i])
                     p_upper = float(df['KCUe_20_2'].iloc[-i])
                     p_lower = float(df['KCLe_20_2'].iloc[-i])
                     
-                    # Penamaan label hari
                     hari_teks = "Hari Ini" if i == 1 else f"{i-1} Hari Lalu"
                     
                     if p_close > p_upper:
-                        status = f"🚀 BREAKOUT ATAS ({hari_teks})"
-                        # Jika breakout terjadi kemarin/lusa, itu bisa jadi peluang 'Retest/Pullback'
+                        kc_status = f"🚀 KC BREAKOUT ATAS ({hari_teks})"
                         action = "🟢 BUY MOMENTUM" if i == 1 else "🟡 PULLBACK / RETEST"
-                        # Skor berkurang 2 poin per hari agar yg paling baru tetap di urutan atas
-                        score = 100 - (i * 2) 
-                        break # Hentikan loop ke belakang jika sudah menemukan sinyal terdekat
-                        
+                        score += 100 - (i * 2) 
+                        break 
                     elif p_close < p_lower:
-                        status = f"📉 BREAKOUT BAWAH ({hari_teks})"
+                        kc_status = f"📉 KC BREAKOUT BAWAH ({hari_teks})"
                         action = "🔴 SELL / AVOID"
-                        score = -100 + (i * 2)
+                        score -= 100 - (i * 2)
                         break
                 except:
                     continue
 
-            # Jika tidak ada riwayat breakout di 3 hari terakhir, cek posisinya hari ini
-            if status == "⚪ INSIDE CHANNEL":
-                if jarak_ke_upper <= 2.0:
-                    status = "⚠️ MENGUJI UPPER BAND"
-                    action = "WATCHLIST (Potensi Breakout)"
-                    score = 50
-                elif jarak_ke_lower <= 2.0:
-                    status = "⚠️ MENGUJI LOWER BAND"
-                    action = "WATCHLIST (Potensi Breakdown)"
-                    score = -50
+            # Logika VWAP Bands
+            if price_today > vwap_upper_today:
+                vwap_status = "🔥 OVERVALUED (Tembus VWAP Atas)"
+                # Jika harga terbang terlalu jauh di luar VWAP dan KC, ini sinyal jenuh beli
+                if "BUY" in action: action = "⚠️ RAWAN KOREKSI (Take Profit)"
+                score += 20
+            elif price_today < vwap_lower_today:
+                vwap_status = "🧊 UNDERVALUED (Tembus VWAP Bawah)"
+                # Jika harga jatuh ke VWAP bawah dan masuk zona Pullback KC, ini sinyal emas
+                if "PULLBACK" in action: action = "💎 SNIPER ENTRY"
+                score -= 20
 
             # Masukkan ke dalam array hasil
             results.append({
                 "Ticker": ticker,
-                "Status": status,
                 "Action": action,
                 "Score": score,
                 "Harga Skrg": int(price_today),
-                "Upper KC": int(upper_today),
-                "Middle KC (EMA)": int(middle_today),
-                "Lower KC": int(lower_today),
-                "Jarak ke Upper (%)": round(jarak_ke_upper, 2),
-                "Jarak ke Lower (%)": round(jarak_ke_lower, 2),
+                "Status Keltner": kc_status,
+                "Status VWAP": vwap_status,
+                "VWAP": int(vwap_today),
+                "VWAP Upper": int(vwap_upper_today),
+                "VWAP Lower": int(vwap_lower_today),
+                "Upper KC": int(upper_kc),
+                "Lower KC": int(lower_kc),
                 "Last Update": waktu_update
             })
 
@@ -144,10 +177,10 @@ def analyze_sector(sector_name, ticker_list):
 
     df_result = pd.DataFrame(results)
 
+    # Sesuaikan urutan kolom untuk Google Sheets
     desired_order = [
-        "Ticker", "Status", "Action", "Score", "Harga Skrg", 
-        "Upper KC", "Middle KC (EMA)", "Lower KC", 
-        "Jarak ke Upper (%)", "Jarak ke Lower (%)", "Last Update"
+        "Ticker", "Action", "Score", "Harga Skrg", "Status Keltner", "Status VWAP", 
+        "VWAP Upper", "VWAP", "VWAP Lower", "Upper KC", "Lower KC", "Last Update"
     ]
     
     if not df_result.empty:
