@@ -47,7 +47,7 @@ def connect_gsheet(target_sheet_name):
         return None
 
 # ==========================================
-# ANALYZE FUNCTION (KELTNER CHANNEL)
+# ANALYZE FUNCTION (KELTNER + VWAP BANDS FIXED)
 # ==========================================
 def analyze_sector(sector_name, ticker_list):
 
@@ -62,9 +62,11 @@ def analyze_sector(sector_name, ticker_list):
             # Download data
             df = yf.download(ticker, period="60d", interval="1d", progress=False, auto_adjust=True, threads=False)
 
+            # Fix struktur kolom yfinance terbaru
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
 
+            # Jika saham delisted/tidak ada data (seperti KLJA.JK), lewati
             if df.empty or len(df) < 30: 
                 continue
 
@@ -76,8 +78,11 @@ def analyze_sector(sector_name, ticker_list):
 
             # ==============================
             # 2. VWAP BANDS CALCULATION (ANCHOR: MONTHLY)
-            # Source: (H+L+C)/3, Offset: 0
             # ==============================
+            # FIX CRITICAL: Hapus zona waktu (timezone) dari index sebelum diconvert ke Period
+            if df.index.tz is not None:
+                df.index = df.index.tz_localize(None)
+
             # Buat penanda bulan untuk Anchoring
             df['Month'] = df.index.to_period('M')
             
@@ -148,12 +153,10 @@ def analyze_sector(sector_name, ticker_list):
             # Logika VWAP Bands
             if price_today > vwap_upper_today:
                 vwap_status = "🔥 OVERVALUED (Tembus VWAP Atas)"
-                # Jika harga terbang terlalu jauh di luar VWAP dan KC, ini sinyal jenuh beli
                 if "BUY" in action: action = "⚠️ RAWAN KOREKSI (Take Profit)"
                 score += 20
             elif price_today < vwap_lower_today:
                 vwap_status = "🧊 UNDERVALUED (Tembus VWAP Bawah)"
-                # Jika harga jatuh ke VWAP bawah dan masuk zona Pullback KC, ini sinyal emas
                 if "PULLBACK" in action: action = "💎 SNIPER ENTRY"
                 score -= 20
 
@@ -165,8 +168,8 @@ def analyze_sector(sector_name, ticker_list):
                 "Harga Skrg": int(price_today),
                 "Status Keltner": kc_status,
                 "Status VWAP": vwap_status,
-                "VWAP": int(vwap_today),
                 "VWAP Upper": int(vwap_upper_today),
+                "VWAP": int(vwap_today),
                 "VWAP Lower": int(vwap_lower_today),
                 "Upper KC": int(upper_kc),
                 "Lower KC": int(lower_kc),
@@ -174,7 +177,8 @@ def analyze_sector(sector_name, ticker_list):
             })
 
         except Exception as e:
-            pass
+            # FIX: Jangan telan error secara diam-diam. Print errornya agar kita tahu!
+            print(f"  -> Kalkulasi gagal untuk {ticker}: {e}")
 
     df_result = pd.DataFrame(results)
 
@@ -190,6 +194,7 @@ def analyze_sector(sector_name, ticker_list):
         df_result = df_result.sort_values(by="Score", ascending=False)
 
     return df_result
+
 # ==========================================
 # SECTOR CONFIG
 # ==========================================
