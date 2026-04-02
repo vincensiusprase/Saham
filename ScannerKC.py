@@ -1,5 +1,5 @@
 # ==========================================
-# MARKET SCANNER - PRO (KELTNER CHANNEL + VWAP)
+# MARKET SCANNER - PRO (KELTNER + VWAP + HA + UT BOT)
 # ==========================================
 
 import numpy as np
@@ -46,7 +46,7 @@ def connect_gsheet(target_sheet_name):
         return None
 
 # ==========================================
-# ANALYZE FUNCTION (KELTNER + VWAP BANDS FIXED)
+# ANALYZE FUNCTION (NATIVE MATH CALCULATIONS)
 # ==========================================
 def analyze_sector(sector_name, ticker_list):
 
@@ -61,71 +61,125 @@ def analyze_sector(sector_name, ticker_list):
             # Download data
             df = yf.download(ticker, period="60d", interval="1d", progress=False, auto_adjust=True, threads=False)
 
-            # Fix struktur kolom yfinance terbaru
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
 
-            # Jika saham delisted/tidak ada data (seperti KLJA.JK), lewati
             if df.empty or len(df) < 30: 
                 continue
 
-# ==============================
-            # 1. KELTNER CHANNEL (TradingView Exact Match)
-            # EMA 20, ATR 10 (RMA Smoothing), Multiplier 2.0
             # ==============================
-            # Hitung Middle Line (EMA 20)
+            # 1. KELTNER CHANNEL (TradingView Exact Match)
+            # ==============================
             df['EMA_20'] = df['Close'].ewm(span=20, adjust=False).mean()
-
-            # Hitung True Range (TR)
+            
             high_low = df['High'] - df['Low']
             high_close = np.abs(df['High'] - df['Close'].shift(1))
             low_close = np.abs(df['Low'] - df['Close'].shift(1))
             true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
 
-            # Hitung ATR menggunakan RMA (Persis seperti TradingView 'ta.atr')
-            # alpha = 1 / ATR_Length
+            # ATR 10 menggunakan RMA Smoothing
             df['ATR_10'] = true_range.ewm(alpha=1/10, adjust=False).mean()
 
-            # Hitung Upper dan Lower Bands
             df['KCUe_20_2'] = df['EMA_20'] + (2.0 * df['ATR_10'])
             df['KCLe_20_2'] = df['EMA_20'] - (2.0 * df['ATR_10'])
-            df['KCMa_20_2'] = df['EMA_20']
-            
+
             # ==============================
-            # 2. VWAP BANDS CALCULATION (ANCHOR: WEEKLY)
+            # 2. VWAP BANDS (ANCHOR: WEEKLY)
             # ==============================
-            # FIX CRITICAL: Hapus zona waktu (timezone) dari index sebelum diconvert ke Period
             if df.index.tz is not None:
                 df.index = df.index.tz_localize(None)
 
-            # Buat penanda MINGGU (Week) untuk Anchoring
             df['Week'] = df.index.to_period('W')
-            
-            # Typical Price & Volume Berbobot
             df['TP'] = (df['High'] + df['Low'] + df['Close']) / 3
             df['TPV'] = df['TP'] * df['Volume']
 
-            # Cumulative TPV & Volume per MINGGU (Reset setiap Senin)
             df['Cum_TPV'] = df.groupby('Week')['TPV'].cumsum()
             df['Cum_Vol'] = df.groupby('Week')['Volume'].cumsum()
-            
-            # Garis Tengah VWAP
             df['VWAP'] = df['Cum_TPV'] / df['Cum_Vol']
 
-            # Perhitungan Standar Deviasi untuk Bands
             df['Dev'] = df['TP'] - df['VWAP']
             df['Dev_Sq_Vol'] = (df['Dev'] ** 2) * df['Volume']
             df['Cum_Dev_Sq_Vol'] = df.groupby('Week')['Dev_Sq_Vol'].cumsum()
-            df['VWAP_Variance'] = df['Cum_Dev_Sq_Vol'] / df['Cum_Vol']
-            df['VWAP_Stdev'] = np.sqrt(df['VWAP_Variance'])
+            df['VWAP_Stdev'] = np.sqrt(df['Cum_Dev_Sq_Vol'] / df['Cum_Vol'])
 
-            # Upper dan Lower VWAP Band (Multiplier = 2.0)
-            vwap_mult = 2.0
-            df['VWAP_Upper'] = df['VWAP'] + (vwap_mult * df['VWAP_Stdev'])
-            df['VWAP_Lower'] = df['VWAP'] - (vwap_mult * df['VWAP_Stdev'])
+            df['VWAP_Upper'] = df['VWAP'] + (2.0 * df['VWAP_Stdev'])
+            df['VWAP_Lower'] = df['VWAP'] - (2.0 * df['VWAP_Stdev'])
 
             # ==============================
-            # 3. EKSTRAKSI DATA HARI INI
+            # 3. HEIKIN ASHI CANDLES
+            # ==============================
+            # HA Close = (O + H + L + C) / 4
+            df['HA_Close'] = (df['Open'] + df['High'] + df['Low'] + df['Close']) / 4
+            
+            # HA Open = (Prev HA_Open + Prev HA_Close) / 2
+            ha_open = np.zeros(len(df))
+            ha_open[0] = (df['Open'].iloc[0] + df['Close'].iloc[0]) / 2
+            for i in range(1, len(df)):
+                ha_open[i] = (ha_open[i-1] + df['HA_Close'].iloc[i-1]) / 2
+            df['HA_Open'] = ha_open
+            
+            # Status Warna HA
+            ha_status = "🟢 BULL (Hijau)" if df['HA_Close'].iloc[-1] > df['HA_Open'].iloc[-1] else "🔴 BEAR (Merah)"
+
+            # ==============================
+            # 4. UT BOT ALGORITHM (Key: 1, ATR: 10)
+            # ==============================
+            # Menggunakan ATR_10 yang sudah dihitung di atas
+            df['nLoss'] = 1.0 * df['ATR_10'] 
+            
+            trail_stop = np.zeros(len(df))
+            trend = np.zeros(len(df))
+            
+            closes = df['Close'].values
+            nLosses = df['nLoss'].values
+            
+            trail_stop[0] = closes[0]
+            trend[0] = 1
+            
+            # Loop Supertrend Inti untuk UT Bot
+            for i in range(1, len(df)):
+                if np.isnan(nLosses[i]):
+                    trail_stop[i] = closes[i]
+                    trend[i] = 1
+                    continue
+                    
+                prev_trail = trail_stop[i-1]
+                prev_trend = trend[i-1]
+                curr_close = closes[i]
+                curr_nloss = nLosses[i]
+                
+                if prev_trend == 1:
+                    if curr_close > prev_trail:
+                        trail_stop[i] = max(prev_trail, curr_close - curr_nloss)
+                        trend[i] = 1
+                    else:
+                        trail_stop[i] = curr_close + curr_nloss
+                        trend[i] = -1
+                else:
+                    if curr_close < prev_trail:
+                        trail_stop[i] = min(prev_trail, curr_close + curr_nloss)
+                        trend[i] = -1
+                    else:
+                        trail_stop[i] = curr_close - curr_nloss
+                        trend[i] = 1
+                        
+            df['UT_Trend'] = trend
+            
+            # Ekstraksi Sinyal UT Bot Hari Ini vs Kemarin
+            trend_now = trend[-1]
+            trend_prev = trend[-2]
+            
+            if trend_now == 1 and trend_prev == -1:
+                ut_signal = "🟢 BUY"
+            elif trend_now == -1 and trend_prev == 1:
+                ut_signal = "🔴 SELL"
+            elif trend_now == 1:
+                ut_signal = "🔼 Hold BUY"
+            else:
+                ut_signal = "🔽 Hold SELL"
+
+            # ==============================
+            # 5. EKSTRAKSI DATA & LOGIKA SCORING
             # ==============================
             price_today = float(df["Close"].iloc[-1])
             upper_kc = float(df['KCUe_20_2'].iloc[-1])
@@ -134,9 +188,7 @@ def analyze_sector(sector_name, ticker_list):
             vwap_today = float(df['VWAP'].iloc[-1])
             vwap_upper_today = float(df['VWAP_Upper'].iloc[-1])
             vwap_lower_today = float(df['VWAP_Lower'].iloc[-1])
-            # ==============================
-            # 4. LOGIKA SCORING (KC + VWAP)
-            # ==============================
+            
             score = 0
             kc_status = "⚪ INSIDE KC"
             vwap_status = "⚪ DALAM BATAS WAJAR VWAP"
@@ -148,7 +200,6 @@ def analyze_sector(sector_name, ticker_list):
                     p_close = float(df["Close"].iloc[-i])
                     p_upper = float(df['KCUe_20_2'].iloc[-i])
                     p_lower = float(df['KCLe_20_2'].iloc[-i])
-                    
                     hari_teks = "Hari Ini" if i == 1 else f"{i-1} Hari Lalu"
                     
                     if p_close > p_upper:
@@ -161,8 +212,7 @@ def analyze_sector(sector_name, ticker_list):
                         action = "🔴 SELL / AVOID"
                         score -= 100 - (i * 2)
                         break
-                except:
-                    continue
+                except: continue
 
             # Logika VWAP Bands
             if price_today > vwap_upper_today:
@@ -173,8 +223,14 @@ def analyze_sector(sector_name, ticker_list):
                 vwap_status = "🧊 UNDERVALUED (Tembus VWAP Bawah)"
                 if "PULLBACK" in action: action = "💎 SNIPER ENTRY"
                 score -= 20
+                
+            # Logika Konfirmasi UT Bot & HA ke dalam Score
+            if ut_signal == "🟢 BUY" and "BULL" in ha_status:
+                score += 30 # Konfirmasi kuat jika UT Bot & Heikin Ashi selaras hijau
+            elif ut_signal == "🔴 SELL" and "BEAR" in ha_status:
+                score -= 30
 
-            # Masukkan ke dalam array hasil
+            # Simpan Hasil
             results.append({
                 "Ticker": ticker,
                 "Action": action,
@@ -182,6 +238,8 @@ def analyze_sector(sector_name, ticker_list):
                 "Harga Skrg": int(price_today),
                 "Status Keltner": kc_status,
                 "Status VWAP": vwap_status,
+                "Heikin Ashi": ha_status,
+                "UT Bot (1,10)": ut_signal,
                 "VWAP Upper": int(vwap_upper_today),
                 "VWAP": int(vwap_today),
                 "VWAP Lower": int(vwap_lower_today),
@@ -191,7 +249,6 @@ def analyze_sector(sector_name, ticker_list):
             })
 
         except Exception as e:
-            # FIX: Jangan telan error secara diam-diam. Print errornya agar kita tahu!
             print(f"  -> Kalkulasi gagal untuk {ticker}: {e}")
 
     df_result = pd.DataFrame(results)
@@ -199,7 +256,8 @@ def analyze_sector(sector_name, ticker_list):
     # Sesuaikan urutan kolom untuk Google Sheets
     desired_order = [
         "Ticker", "Action", "Score", "Harga Skrg", "Status Keltner", "Status VWAP", 
-        "VWAP Upper", "VWAP", "VWAP Lower", "Upper KC", "Lower KC", "Last Update"
+        "Heikin Ashi", "UT Bot (1,10)", "VWAP Upper", "VWAP", "VWAP Lower", 
+        "Upper KC", "Lower KC", "Last Update"
     ]
     
     if not df_result.empty:
