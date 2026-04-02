@@ -159,9 +159,6 @@ def analyze_sector(sector_name, ticker_list):
 # ==========================================
 # SECTOR CONFIG
 # ==========================================
-# ==========================================
-# SECTOR CONFIG (LITE VERSION - 8 SAMPLES/SECTOR)
-# ==========================================
 SECTOR_CONFIG = {    
     "IDXINDUST": [
         "ASII.JK", "UNTR.JK", "PIPA.JK", "BNBR.JK", "HEXA.JK", "IMPC.JK", "MHKI.JK", "LABA.JK"
