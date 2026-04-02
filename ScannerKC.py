@@ -69,9 +69,9 @@ def analyze_sector(sector_name, ticker_list):
             if df.empty or len(df) < 30: 
                 continue
 
-            # ==============================
-            # 1. KELTNER CHANNEL (NATIVE PANDAS MATH)
-            # EMA 20, ATR 10, Multiplier 2.0
+# ==============================
+            # 1. KELTNER CHANNEL (TradingView Exact Match)
+            # EMA 20, ATR 10 (RMA Smoothing), Multiplier 2.0
             # ==============================
             # Hitung Middle Line (EMA 20)
             df['EMA_20'] = df['Close'].ewm(span=20, adjust=False).mean()
@@ -82,31 +82,32 @@ def analyze_sector(sector_name, ticker_list):
             low_close = np.abs(df['Low'] - df['Close'].shift(1))
             true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
 
-            # Hitung ATR (SMA 10 dari TR)
-            df['ATR_10'] = true_range.rolling(10).mean()
+            # Hitung ATR menggunakan RMA (Persis seperti TradingView 'ta.atr')
+            # alpha = 1 / ATR_Length
+            df['ATR_10'] = true_range.ewm(alpha=1/10, adjust=False).mean()
 
             # Hitung Upper dan Lower Bands
             df['KCUe_20_2'] = df['EMA_20'] + (2.0 * df['ATR_10'])
             df['KCLe_20_2'] = df['EMA_20'] - (2.0 * df['ATR_10'])
             df['KCMa_20_2'] = df['EMA_20']
-
+            
             # ==============================
-            # 2. VWAP BANDS CALCULATION (ANCHOR: MONTHLY)
+            # 2. VWAP BANDS CALCULATION (ANCHOR: WEEKLY)
             # ==============================
             # FIX CRITICAL: Hapus zona waktu (timezone) dari index sebelum diconvert ke Period
             if df.index.tz is not None:
                 df.index = df.index.tz_localize(None)
 
-            # Buat penanda bulan untuk Anchoring
-            df['Month'] = df.index.to_period('M')
+            # Buat penanda MINGGU (Week) untuk Anchoring
+            df['Week'] = df.index.to_period('W')
             
             # Typical Price & Volume Berbobot
             df['TP'] = (df['High'] + df['Low'] + df['Close']) / 3
             df['TPV'] = df['TP'] * df['Volume']
 
-            # Cumulative TPV & Volume per Bulan (Sesuai rumus VWAP)
-            df['Cum_TPV'] = df.groupby('Month')['TPV'].cumsum()
-            df['Cum_Vol'] = df.groupby('Month')['Volume'].cumsum()
+            # Cumulative TPV & Volume per MINGGU (Reset setiap Senin)
+            df['Cum_TPV'] = df.groupby('Week')['TPV'].cumsum()
+            df['Cum_Vol'] = df.groupby('Week')['Volume'].cumsum()
             
             # Garis Tengah VWAP
             df['VWAP'] = df['Cum_TPV'] / df['Cum_Vol']
@@ -114,7 +115,7 @@ def analyze_sector(sector_name, ticker_list):
             # Perhitungan Standar Deviasi untuk Bands
             df['Dev'] = df['TP'] - df['VWAP']
             df['Dev_Sq_Vol'] = (df['Dev'] ** 2) * df['Volume']
-            df['Cum_Dev_Sq_Vol'] = df.groupby('Month')['Dev_Sq_Vol'].cumsum()
+            df['Cum_Dev_Sq_Vol'] = df.groupby('Week')['Dev_Sq_Vol'].cumsum()
             df['VWAP_Variance'] = df['Cum_Dev_Sq_Vol'] / df['Cum_Vol']
             df['VWAP_Stdev'] = np.sqrt(df['VWAP_Variance'])
 
@@ -133,7 +134,6 @@ def analyze_sector(sector_name, ticker_list):
             vwap_today = float(df['VWAP'].iloc[-1])
             vwap_upper_today = float(df['VWAP_Upper'].iloc[-1])
             vwap_lower_today = float(df['VWAP_Lower'].iloc[-1])
-
             # ==============================
             # 4. LOGIKA SCORING (KC + VWAP)
             # ==============================
