@@ -4,7 +4,7 @@
 
 import yfinance as yf
 import pandas as pd
-import pandas_ta as ta
+import ta
 import gspread
 from gspread_dataframe import set_with_dataframe
 from datetime import datetime
