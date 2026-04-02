@@ -83,7 +83,7 @@ def analyze_sector(sector_name, ticker_list):
             df['KCUe_20_2'] = df['EMA_20'] + (2.0 * df['ATR_10'])
             df['KCLe_20_2'] = df['EMA_20'] - (2.0 * df['ATR_10'])
             
-            # INI BARIS YANG TERTINGGAL SEBELUMNYA:
+            # KCMa
             df['KCMa_20_2'] = df['EMA_20'] 
 
             # ==============================
@@ -175,7 +175,7 @@ def analyze_sector(sector_name, ticker_list):
             else:
                 ut_signal = "🔽 Hold SELL"
 
-# ==============================
+            # ==============================
             # 5. EKSTRAKSI DATA & LOGIKA SCORING (THE CONTRARIAN / RUBBER BAND)
             # ==============================
             price_today = float(df["Close"].iloc[-1])
@@ -289,44 +289,45 @@ def analyze_sector(sector_name, ticker_list):
 
     return df_result
 
-            # ==========================================
-            # SECTOR CONFIG
-            # ==========================================
-            SECTOR_CONFIG = {    
-                "IDXINDUST": [
-                    "AMFG.JK", "AMIN.JK", "APII.JK", "ARKA.JK", "ARNA.JK", "ASGR.JK"
-                ],
-                "IDXNONCYC": [
-                    "AALI.JK", "ADES.JK", "AGAR.JK", "AISA.JK", "ALTO.JK", "AMMS.JK"
-                ],
-                "IDXFINANCE": [
-                    "ABDA.JK", "ADMF.JK", "AGRO.JK", "AGRS.JK", "AHAP.JK", "AMAG.JK"
-                ],
-                "IDXCYCLIC": [
-                    "ABBA.JK", "ACES.JK", "ACRO.JK", "AEGS.JK", "AKKU.JK", "ARGO.JK"
-                ],
-                "IDXTECHNO": [
-                    "AREA.JK", "ATIC.JK", "AWAN.JK", "AXIO.JK", "BELI.JK", "BUKA.JK"
-                ],
-                "IDXBASIC": [
-                    "ADMG.JK", "AGII.JK", "AKPI.JK", "ALDO.JK", "ALKA.JK", "ALMI.JK"
-                ],
-                "IDXENERGY": [
-                    "AADI.JK", "ABMM.JK", "ADMR.JK", "ADRO.JK", "AIMS.JK", "AKRA.JK"
-                ],
-                "IDXHEALTH": [
-                    "BMHS.JK", "CARE.JK", "CHEK.JK", "DGNS.JK", "DKHH.JK", "DVLA.JK"
-                ],
-                "IDXINFRA": [
-                    "ACST.JK", "ADHI.JK", "ARKO.JK", "ASLI.JK", "BALI.JK", "BDKR.JK"
-                ],
-                "IDXPROPERT": [
-                    "ADCP.JK", "AMAN.JK", "APLN.JK", "ARMY.JK", "ASPI.JK", "ASRI.JK"
-                ],
-                "IDXTRANS": [
-                    "AKSI.JK", "ASSA.JK", "BIRD.JK", "BLOG.JK", "BLTA.JK", "BPTR.JK"
-                ]
-            }
+
+# ==========================================
+# SECTOR CONFIG (RATA KIRI / NO INDENT)
+# ==========================================
+SECTOR_CONFIG = {    
+    "IDXINDUST": [
+        "AMFG.JK", "AMIN.JK", "APII.JK", "ARKA.JK", "ARNA.JK", "ASGR.JK"
+    ],
+    "IDXNONCYC": [
+        "AALI.JK", "ADES.JK", "AGAR.JK", "AISA.JK", "ALTO.JK", "AMMS.JK"
+    ],
+    "IDXFINANCE": [
+        "ABDA.JK", "ADMF.JK", "AGRO.JK", "AGRS.JK", "AHAP.JK", "AMAG.JK"
+    ],
+    "IDXCYCLIC": [
+        "ABBA.JK", "ACES.JK", "ACRO.JK", "AEGS.JK", "AKKU.JK", "ARGO.JK"
+    ],
+    "IDXTECHNO": [
+        "AREA.JK", "ATIC.JK", "AWAN.JK", "AXIO.JK", "BELI.JK", "BUKA.JK"
+    ],
+    "IDXBASIC": [
+        "ADMG.JK", "AGII.JK", "AKPI.JK", "ALDO.JK", "ALKA.JK", "ALMI.JK"
+    ],
+    "IDXENERGY": [
+        "AADI.JK", "ABMM.JK", "ADMR.JK", "ADRO.JK", "AIMS.JK", "AKRA.JK"
+    ],
+    "IDXHEALTH": [
+        "BMHS.JK", "CARE.JK", "CHEK.JK", "DGNS.JK", "DKHH.JK", "DVLA.JK"
+    ],
+    "IDXINFRA": [
+        "ACST.JK", "ADHI.JK", "ARKO.JK", "ASLI.JK", "BALI.JK", "BDKR.JK"
+    ],
+    "IDXPROPERT": [
+        "ADCP.JK", "AMAN.JK", "APLN.JK", "ARMY.JK", "ASPI.JK", "ASRI.JK"
+    ],
+    "IDXTRANS": [
+        "AKSI.JK", "ASSA.JK", "BIRD.JK", "BLOG.JK", "BLTA.JK", "BPTR.JK"
+    ]
+}
 
 # ==========================================
 # MAIN
