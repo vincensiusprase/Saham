@@ -1,11 +1,10 @@
 # ==========================================
-# MARKET SCANNER - PRO (KELTNER CHANNEL BREAKOUT)
+# MARKET SCANNER - PRO (KELTNER CHANNEL + VWAP)
 # ==========================================
 
 import numpy as np
 import yfinance as yf
 import pandas as pd
-import ta
 import gspread
 from gspread_dataframe import set_with_dataframe
 from datetime import datetime
@@ -71,10 +70,25 @@ def analyze_sector(sector_name, ticker_list):
                 continue
 
             # ==============================
-            # 1. KELTNER CHANNEL (EMA 20, ATR 10)
+            # 1. KELTNER CHANNEL (NATIVE PANDAS MATH)
+            # EMA 20, ATR 10, Multiplier 2.0
             # ==============================
-            kc = df.ta.kc(length=20, scalar=2, mamode="ema")
-            df = pd.concat([df, kc], axis=1)
+            # Hitung Middle Line (EMA 20)
+            df['EMA_20'] = df['Close'].ewm(span=20, adjust=False).mean()
+
+            # Hitung True Range (TR)
+            high_low = df['High'] - df['Low']
+            high_close = np.abs(df['High'] - df['Close'].shift(1))
+            low_close = np.abs(df['Low'] - df['Close'].shift(1))
+            true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+
+            # Hitung ATR (SMA 10 dari TR)
+            df['ATR_10'] = true_range.rolling(10).mean()
+
+            # Hitung Upper dan Lower Bands
+            df['KCUe_20_2'] = df['EMA_20'] + (2.0 * df['ATR_10'])
+            df['KCLe_20_2'] = df['EMA_20'] - (2.0 * df['ATR_10'])
+            df['KCMa_20_2'] = df['EMA_20']
 
             # ==============================
             # 2. VWAP BANDS CALCULATION (ANCHOR: MONTHLY)
@@ -239,7 +253,7 @@ SECTOR_CONFIG = {
 # ==========================================
 if __name__ == "__main__":
 
-    print("🤖 START MARKET SCANNER PRO (KELTNER CHANNEL) 🤖")
+    print("🤖 START MARKET SCANNER PRO (KELTNER CHANNEL NATIVE) 🤖")
 
     for sheet_name, saham_list in SECTOR_CONFIG.items():
         df_final = analyze_sector(sheet_name, saham_list)
