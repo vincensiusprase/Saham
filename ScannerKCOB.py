@@ -19,7 +19,7 @@ warnings.filterwarnings('ignore')
 
 # Ganti dengan Spreadsheet ID Anda
 SPREADSHEET_ID = "1QbdNwITMBF0MZXh3ousJ8WwHFYIaAxNxzNPwHOtSXlo"
-SWING_LENGTH = 5  # Parameter panjang swing untuk SMC LuxAlgo
+SWING_LENGTH = 5  # Parameter panjang swing (Setara LuxAlgo Internal Structure Size)
 
 # ==========================================
 # GOOGLE SHEET CONNECTION
@@ -47,60 +47,78 @@ def connect_gsheet(target_sheet_name):
         return None
 
 # ==========================================
-# SMART MONEY CONCEPTS (SMC) FUNCTIONS
+# SMART MONEY CONCEPTS (LUXALGO EXACT TRANSLATION)
 # ==========================================
-def get_swing_points(df, length):
-    """Mencari Swing High dan Swing Low"""
-    df['Swing_High'] = df['High'] == df['High'].rolling(window=length*2+1, center=True).max()
-    df['Swing_Low'] = df['Low'] == df['Low'].rolling(window=length*2+1, center=True).min()
+def calculate_smc_order_blocks(df, length=5):
+    """
+    Algoritma ini menerjemahkan logika murni LuxAlgo:
+    1. Cari Swing High
+    2. Tunggu harga Breakout (BOS)
+    3. Cari titik terendah (Lowest Low) antara Swing High dan Breakout sebagai OB
+    4. Mitigasi (Hapus) OB jika dijebol ke bawah.
+    """
+    # 1. Cari Swing Highs (Pivot Points) menggunakan Rolling Window
+    rolling_max = df['High'].rolling(window=length*2+1, center=True).max()
+    df['Is_Swing_High'] = (df['High'] == rolling_max)
     
-    # Isi forward (ffill) level swing untuk referensi harga
-    df['Last_Swing_High_Price'] = np.where(df['Swing_High'], df['High'], np.nan)
-    df['Last_Swing_High_Price'] = df['Last_Swing_High_Price'].ffill()
-    
-    df['Last_Swing_Low_Price'] = np.where(df['Swing_Low'], df['Low'], np.nan)
-    df['Last_Swing_Low_Price'] = df['Last_Swing_Low_Price'].ffill()
-    
-    return df
+    # Forward-fill data Swing High agar bisa direferensikan pada candle-candle berikutnya
+    df['SH_Idx'] = np.where(df['Is_Swing_High'], np.arange(len(df)), np.nan)
+    df['SH_Val'] = np.where(df['Is_Swing_High'], df['High'], np.nan)
+    df['Last_SH_Idx'] = df['SH_Idx'].ffill()
+    df['Last_SH_Val'] = df['SH_Val'].ffill()
 
-def find_bullish_order_blocks(df):
-    """Mendeteksi Bullish Order Blocks setelah Break of Structure (BOS)"""
-    df['Bullish_OB_Top'] = np.nan
-    df['Bullish_OB_Bottom'] = np.nan
-    
-    ob_top = np.nan
-    ob_bottom = np.nan
-    trend_bullish = False
+    # 2. Proses Deteksi Break of Structure (BOS) dan Penarikan Kotak OB
+    active_obs = []
+    last_bos_sh_idx = -1 
 
-    for i in range(SWING_LENGTH * 2, len(df)):
-        current_close = df['Close'].iloc[i]
-        last_swing_high = df['Last_Swing_High_Price'].iloc[i-1]
-        last_swing_low = df['Last_Swing_Low_Price'].iloc[i-1]
+    # Ekstraksi array NumPy untuk iterasi super cepat (C-Speed)
+    closes = df['Close'].values
+    highs = df['High'].values
+    lows = df['Low'].values
+    last_sh_idxs = df['Last_SH_Idx'].values
+    last_sh_vals = df['Last_SH_Val'].values
+
+    ob_tops = np.full(len(df), np.nan)
+    ob_bottoms = np.full(len(df), np.nan)
+
+    for i in range(length * 2, len(df)):
+        current_close = closes[i]
         
-        # 1. Deteksi Bullish BOS
-        if pd.notna(last_swing_high) and current_close > last_swing_high and not trend_bullish:
-            trend_bullish = True
+        # A. MITIGASI (PENGHAPUSAN OB)
+        # Sesuai LuxAlgo: "Mitigation Source = Close". Jika candle ditutup di bawah batas OB, OB hangus.
+        active_obs = [ob for ob in active_obs if current_close >= ob['bottom']]
+
+        # B. DETEKSI BOS (Break of Structure) Bullish
+        last_sh_idx = last_sh_idxs[i-1]
+        last_sh_val = last_sh_vals[i-1]
+
+        if not np.isnan(last_sh_idx) and not np.isnan(last_sh_val):
+            last_sh_idx = int(last_sh_idx)
             
-            # 2. Cari Order Block (Candle merah terakhir sebelum pergerakan naik)
-            for j in range(i-1, max(0, i-20), -1):
-                if df['Close'].iloc[j] < df['Open'].iloc[j]: # Candle Bearish
-                    ob_top = df['High'].iloc[j]
-                    ob_bottom = df['Low'].iloc[j]
-                    break
+            # Harga Close menembus resisten Swing High terakhir
+            if current_close > last_sh_val and last_sh_idx != last_bos_sh_idx:
+                # KUNCI LUXALGO: Cari nilai terendah (min) dari Swing High ke titik Breakout
+                if last_sh_idx < i:
+                    slice_lows = lows[last_sh_idx:i+1]
+                    min_idx_offset = np.argmin(slice_lows)
+                    absolute_ob_idx = last_sh_idx + min_idx_offset
+                    
+                    # Tetapkan High dan Low dari candle terendah tersebut sebagai zona Order Block
+                    ob_top = highs[absolute_ob_idx]
+                    ob_bottom = lows[absolute_ob_idx]
+
+                    active_obs.append({'top': ob_top, 'bottom': ob_bottom})
+                    last_bos_sh_idx = last_sh_idx # Hindari deteksi ganda
         
-        # 3. Mitigasi / Pembatalan OB (REVISI PENTING)
-        # Jika harga turun dan closing menembus batas bawah OB, OB tersebut hangus (invalid)
-        if pd.notna(ob_bottom) and current_close < ob_bottom:
-            ob_top = np.nan
-            ob_bottom = np.nan
-            
-        # Jika harga turun menembus swing low utama, tren batal
-        if pd.notna(last_swing_low) and current_close < last_swing_low:
-            trend_bullish = False
-            
-        # Simpan nilai OB yang aktif
-        df.loc[df.index[i], 'Bullish_OB_Top'] = ob_top
-        df.loc[df.index[i], 'Bullish_OB_Bottom'] = ob_bottom
+        # C. Rekam OB paling ujung (terbaru) yang masih aktif untuk hari ini
+        if active_obs:
+            latest_ob = active_obs[-1] 
+            ob_tops[i] = latest_ob['top']
+            ob_bottoms[i] = latest_ob['bottom']
+
+    # Kembalikan hasilnya ke Pandas DataFrame
+    df['Bullish_OB_Top'] = ob_tops
+    df['Bullish_OB_Bottom'] = ob_bottoms
 
     return df
 
@@ -117,13 +135,11 @@ def analyze_sector(sector_name, ticker_list):
 
     for ticker in ticker_list:
         try:
-            # Download data (Diperpanjang ke 120d untuk SMC)
             df = yf.download(ticker, period="120d", interval="1d", progress=False, auto_adjust=True, threads=False)
 
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
 
-            # Minimal data 50 hari untuk SMC berjalan lancar
             if df.empty or len(df) < 50: 
                 continue
 
@@ -222,10 +238,9 @@ def analyze_sector(sector_name, ticker_list):
             else: ut_signal = "🔽 Hold SELL"
 
             # ==============================
-            # 5. SMART MONEY CONCEPTS (SMC) EXECUTION
+            # 5. SMART MONEY CONCEPTS EXECUTION
             # ==============================
-            df = get_swing_points(df, SWING_LENGTH)
-            df = find_bullish_order_blocks(df)
+            df = calculate_smc_order_blocks(df, length=SWING_LENGTH)
 
             # ==============================
             # 6. EKSTRAKSI DATA & LOGIKA SCORING
@@ -244,7 +259,7 @@ def analyze_sector(sector_name, ticker_list):
             potensi_tp_pct = ((middle_kc - price_today) / price_today) * 100
             target_tp_price = middle_kc
 
-            # SMC Order Block Status
+            # SMC Order Block Data
             ob_top = df['Bullish_OB_Top'].iloc[-1]
             ob_bottom = df['Bullish_OB_Bottom'].iloc[-1]
             smc_status = "⚪ Tidak Ada OB Aktif"
@@ -254,22 +269,22 @@ def analyze_sector(sector_name, ticker_list):
             vwap_status = "⚪ DALAM BATAS WAJAR"
             action = "WAIT"
 
-            # SMC Scoring Bonus (REVISI LOGIKA STATUS)
+            # --- SMC SCORING & LOGIKA STATUS ---
             if pd.notna(ob_top) and pd.notna(ob_bottom):
-                if ob_bottom <= price_today <= ob_top:
-                    smc_status = "🟢 DI DALAM OB (Area Beli)"
-                    score += 50 
-                elif price_today > ob_top:
-                    jarak_ke_ob = (price_today - ob_top) / ob_top
-                    if jarak_ke_ob <= 0.03: # Toleransi maksimal 3% di atas OB
-                        smc_status = "🚀 DEKAT/MANTUL DARI OB"
-                        score += 30
+                if price_today > ob_top:
+                    # Harga sedang tinggi di atas kotak OB
+                    jarak_turun = ((price_today - ob_top) / price_today) * 100
+                    if jarak_turun <= 2.0: 
+                        smc_status = "🚀 RE-TEST (Pantulan di OB)"
+                        score += 30 # Menarik untuk dibeli karena dekat area pantulan
                     else:
-                        smc_status = "🟡 DI ATAS OB (Tunggu Retest)"
-                        score += 10 # Bonus kecil karena struktur masih uptrend
-                elif price_today < ob_bottom:
-                    # Safety fallback (jika fitur mitigasi terlewat)
-                    smc_status = "🔴 OB JEBOL (Mitigated)"
+                        smc_status = f"🟡 DI ATAS OB (Jauh {jarak_turun:.1f}%)"
+                        score += 10 # Sedang Uptrend kuat, tapi tunggu harga koreksi
+                elif ob_bottom <= price_today <= ob_top:
+                    # Harga sedang merendam di dalam kotak emas OB
+                    smc_status = "🟢 DI DALAM OB (Area Beli)"
+                    score += 50
+                # Kondisi tembus bawah OB tidak ada karena sudah otomatis dihapus di fitur Mitigasi
 
             # 1. Deteksi Keltner Channel 
             for i in range(1, 5):
