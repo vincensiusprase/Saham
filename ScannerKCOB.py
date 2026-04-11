@@ -1,9 +1,10 @@
 # ==========================================
 # MARKET SCANNER - PRO
-# Keltner + VWAP + HA + UT BOT + RUBBER BAND
+# Keltner + VWAP + Rubber Band
 # + SMC LuxAlgo Style (OB Internal & Swing, BOS/CHoCH, FVG)
 # Timeframe: Harian (1d)
-# Tujuan: Deteksi saham yang menyentuh area Bullish Order Block
+# Tujuan : Deteksi saham yang menyentuh area Bullish Order Block
+# TP     : ob_low Bearish OB aktif terdekat di atas harga
 # ==========================================
 
 import numpy as np
@@ -399,49 +400,28 @@ def analyze_sector(sector_name, ticker_list):
             df['VWAP_Lower']    = df['VWAP'] - (2.0 * df['VWAP_Stdev'])
 
             # ============================================
-            # 3. HEIKIN ASHI
+            # 3. KONFIRMASI CANDLE
+            # Cek apakah 1-2 candle terakhir bullish (close > open)
             # ============================================
-            df['HA_Close'] = (df['Open'] + df['High'] + df['Low'] + df['Close']) / 4
-            ha_open        = np.zeros(len(df))
-            ha_open[0]     = (df['Open'].iloc[0] + df['Close'].iloc[0]) / 2
-            for i in range(1, len(df)):
-                ha_open[i] = (ha_open[i-1] + df['HA_Close'].iloc[i-1]) / 2
-            df['HA_Open']  = ha_open
-            ha_status      = "🟢 BULL" if df['HA_Close'].iloc[-1] > df['HA_Open'].iloc[-1] else "🔴 BEAR"
+            c_close1 = float(df['Close'].iloc[-1])
+            c_open1  = float(df['Open'].iloc[-1])
+            c_close2 = float(df['Close'].iloc[-2])
+            c_open2  = float(df['Open'].iloc[-2])
+
+            candle1_bull = c_close1 > c_open1
+            candle2_bull = c_close2 > c_open2
+
+            if candle1_bull and candle2_bull:
+                candle_status = "🟢 2 Candle Bullish"
+            elif candle1_bull:
+                candle_status = "🟡 Candle Hari Ini Bullish"
+            elif candle2_bull:
+                candle_status = "🟡 Candle Kemarin Bullish"
+            else:
+                candle_status = "🔴 2 Candle Bearish"
 
             # ============================================
-            # 4. UT BOT
-            # ============================================
-            df['nLoss']    = 1.0 * df['ATR_10']
-            trail_stop     = np.zeros(len(df))
-            trend_ut       = np.zeros(len(df))
-            closes_arr     = df['Close'].values
-            nlosses_arr    = df['nLoss'].values
-            trail_stop[0]  = closes_arr[0]
-            trend_ut[0]    = 1
-
-            for i in range(1, len(df)):
-                if np.isnan(nlosses_arr[i]):
-                    trail_stop[i] = closes_arr[i]; trend_ut[i] = 1; continue
-                prev_t = trail_stop[i-1]
-                prev_d = trend_ut[i-1]
-                cc     = closes_arr[i]
-                nl     = nlosses_arr[i]
-                if prev_d == 1:
-                    trail_stop[i] = max(prev_t, cc - nl) if cc > prev_t else cc + nl
-                    trend_ut[i]   = 1 if cc > prev_t else -1
-                else:
-                    trail_stop[i] = min(prev_t, cc + nl) if cc < prev_t else cc - nl
-                    trend_ut[i]   = -1 if cc < prev_t else 1
-
-            t_now, t_prev = trend_ut[-1], trend_ut[-2]
-            if   t_now ==  1 and t_prev == -1: ut_signal = "🟢 BUY"
-            elif t_now == -1 and t_prev ==  1: ut_signal = "🔴 SELL"
-            elif t_now ==  1:                  ut_signal = "🔼 Hold BUY"
-            else:                              ut_signal = "🔽 Hold SELL"
-
-            # ============================================
-            # 5. SMC — ATR 200 untuk filter OB
+            # 4. SMC — ATR 200 untuk filter OB
             # ============================================
             atr_200 = calc_atr(df, OB_FILTER_ATR_PERIOD)
 
@@ -471,7 +451,7 @@ def analyze_sector(sector_name, ticker_list):
             fvg_list = detect_fvg(df)
 
             # ============================================
-            # 6. EKSTRAKSI HARGA & SCORING
+            # 5. EKSTRAKSI HARGA
             # ============================================
             price_today      = float(df["Close"].iloc[-1])
             upper_kc         = float(df['KCUe_20_2'].iloc[-1])
@@ -482,22 +462,20 @@ def analyze_sector(sector_name, ticker_list):
             vwap_lower_today = float(df['VWAP_Lower'].iloc[-1])
             atr_today        = float(df['ATR_10'].iloc[-1])
             atr_pct          = (atr_today / price_today) * 100
-            potensi_tp_pct   = ((middle_kc - price_today) / price_today) * 100
-            target_tp_price  = middle_kc
 
             # ============================================
-            # 7. STATUS SMC — OB TOUCH DETECTION
+            # 6. STATUS SMC — OB TOUCH DETECTION & TP
             # ============================================
             active_obs       = [o for o in all_obs if o['active']]
             bull_int, bull_sw, bear_int, bear_sw = get_ob_touch_status(price_today, active_obs)
 
-            # Kumpulkan semua OB aktif (untuk info kolom)
+            # Kumpulkan semua OB aktif
             all_active_bull_int = [o for o in ob_internal if o['active'] and o['type']=='Bullish']
             all_active_bull_sw  = [o for o in ob_swing   if o['active'] and o['type']=='Bullish']
             all_active_bear_int = [o for o in ob_internal if o['active'] and o['type']=='Bearish']
             all_active_bear_sw  = [o for o in ob_swing   if o['active'] and o['type']=='Bearish']
 
-            # OB terdekat (yang paling baru / paling atas index)
+            # OB paling baru (latest bar index)
             def latest_ob(obs_list):
                 if not obs_list: return None
                 return max(obs_list, key=lambda x: x['ob_idx'])
@@ -506,6 +484,30 @@ def analyze_sector(sector_name, ticker_list):
             nearest_bull_sw  = latest_ob(all_active_bull_sw)
             nearest_bear_int = latest_ob(all_active_bear_int)
             nearest_bear_sw  = latest_ob(all_active_bear_sw)
+
+            # ============================================
+            # TP = ob_low Bearish OB aktif TERDEKAT di atas harga
+            # Prioritas: Internal OB dulu, lalu Swing OB
+            # Fallback: EMA20 jika tidak ada Bearish OB di atas harga
+            # ============================================
+            # Kumpulkan semua Bearish OB aktif yang ob_low-nya di atas harga saat ini
+            bear_obs_above = [
+                o for o in (all_active_bear_int + all_active_bear_sw)
+                if o['ob_low'] > price_today
+            ]
+
+            if bear_obs_above:
+                # Terdekat = ob_low terkecil yang masih di atas harga
+                nearest_bear_tp = min(bear_obs_above, key=lambda x: x['ob_low'])
+                target_tp_price = nearest_bear_tp['ob_low']
+                tp_source       = f"Bear {nearest_bear_tp['label']} OB [{nearest_bear_tp['structure']}]"
+            else:
+                # Fallback ke EMA20
+                nearest_bear_tp = None
+                target_tp_price = float(df['KCMa_20_2'].iloc[-1])
+                tp_source       = "EMA20 (fallback)"
+
+            potensi_tp_pct = ((target_tp_price - price_today) / price_today) * 100
 
             # --- Status OB String ---
             smc_bull_int_status = "⚪ Tidak Ada"
@@ -593,7 +595,7 @@ def analyze_sector(sector_name, ticker_list):
                         break
 
             # ============================================
-            # 8. SCORING KELTNER + VWAP + RUBBER BAND
+            # 7. SCORING KELTNER + VWAP + RUBBER BAND
             # ============================================
             score      = ob_touch_score
             kc_status  = "⚪ INSIDE KC"
@@ -633,60 +635,57 @@ def analyze_sector(sector_name, ticker_list):
                 score += 20
 
             # ============================================
-            # 9. ACTION — Prioritas: Harga Menyentuh Bullish OB
+            # 8. ACTION — Prioritas: Harga Menyentuh Bullish OB
+            # Konfirmasi: minimal 1 candle bullish terakhir
             # ============================================
             if ob_touch_label:
-                # Ada sentuhan Bullish OB
-                if "BULL" in ha_status:
-                    if "BUY" in ut_signal or "Hold BUY" in ut_signal:
-                        action = f"🟢 BUY KUAT: {ob_touch_label} + HA✅ + UT✅"
-                        score += 50
-                    else:
-                        action = f"🟡 BUY SIAP: {ob_touch_label} + HA✅ (Tunggu UT)"
-                        score += 20
+                if candle1_bull or candle2_bull:
+                    action = f"🟢 BUY: {ob_touch_label}"
+                    score += 50
                 else:
-                    action = f"⏳ WAIT: {ob_touch_label} (Tunggu HA Hijau)"
+                    action = f"⏳ WAIT: {ob_touch_label} (Tunggu Candle Bullish)"
                     score -= 10
             elif ob_touch_score < 0:
                 action = "🛑 HINDARI (Di Area Bearish OB)"
             elif score > 120:
-                action = "🔍 PANTAU KETAT (Oversold + OB Dekat)"
+                action = "🔍 PANTAU KETAT (Oversold)"
             elif vwap_status == "🔥 OVERVALUED":
                 action = "🛑 JANGAN BELI (Pucuk)"
             else:
                 action = "⏳ WAIT"
 
-            # --- Info OB Terdekat untuk kolom referensi ---
+            # --- Format OB range untuk kolom ---
             def fmt_ob(ob):
                 if ob is None: return "-"
                 return f"{int(ob['ob_low'])}-{int(ob['ob_high'])} [{ob['structure']}]"
 
             results.append({
-                "Ticker"              : ticker,
-                "Action"              : action,
-                "Score"               : score,
-                "Harga Skrg"          : int(price_today),
-                "Target TP (EMA20)"   : int(target_tp_price),
-                "Potensi TP (%)"      : round(potensi_tp_pct, 2),
-                "ATR (%)"             : round(atr_pct, 2),
+                "Ticker"            : ticker,
+                "Action"            : action,
+                "Score"             : score,
+                "Harga Skrg"        : int(price_today),
+                "Target TP"         : int(target_tp_price),
+                "TP Source"         : tp_source,
+                "Potensi TP (%)"    : round(potensi_tp_pct, 2),
+                "ATR (%)"           : round(atr_pct, 2),
+                # --- Konfirmasi Candle ---
+                "Candle"            : candle_status,
                 # --- SMC OB Internal ---
-                "Bull Internal OB"    : smc_bull_int_status,
-                "Bull Int OB Range"   : fmt_ob(nearest_bull_int),
-                "Bear Internal OB"    : smc_bear_int_status,
-                "Bear Int OB Range"   : fmt_ob(nearest_bear_int),
+                "Bull Internal OB"  : smc_bull_int_status,
+                "Bull Int OB Range" : fmt_ob(nearest_bull_int),
+                "Bear Internal OB"  : smc_bear_int_status,
+                "Bear Int OB Range" : fmt_ob(nearest_bear_int),
                 # --- SMC OB Swing ---
-                "Bull Swing OB"       : smc_bull_sw_status,
-                "Bull Sw OB Range"    : fmt_ob(nearest_bull_sw),
-                "Bear Swing OB"       : smc_bear_sw_status,
-                "Bear Sw OB Range"    : fmt_ob(nearest_bear_sw),
+                "Bull Swing OB"     : smc_bull_sw_status,
+                "Bull Sw OB Range"  : fmt_ob(nearest_bull_sw),
+                "Bear Swing OB"     : smc_bear_sw_status,
+                "Bear Sw OB Range"  : fmt_ob(nearest_bear_sw),
                 # --- FVG ---
-                "FVG Status"          : fvg_status,
-                # --- Indikator Lain ---
-                "Status Keltner"      : kc_status,
-                "Status VWAP"         : vwap_status,
-                "Heikin Ashi"         : ha_status,
-                "UT Bot"              : ut_signal,
-                "Last Update"         : waktu_update
+                "FVG Status"        : fvg_status,
+                # --- Keltner & VWAP ---
+                "Status Keltner"    : kc_status,
+                "Status VWAP"       : vwap_status,
+                "Last Update"       : waktu_update
             })
 
         except Exception as e:
@@ -696,14 +695,15 @@ def analyze_sector(sector_name, ticker_list):
 
     desired_order = [
         "Ticker", "Action", "Score",
-        "Harga Skrg", "Target TP (EMA20)", "Potensi TP (%)", "ATR (%)",
+        "Harga Skrg", "Target TP", "TP Source", "Potensi TP (%)", "ATR (%)",
+        "Candle",
         "Bull Internal OB", "Bull Int OB Range",
         "Bear Internal OB", "Bear Int OB Range",
         "Bull Swing OB",    "Bull Sw OB Range",
         "Bear Swing OB",    "Bear Sw OB Range",
         "FVG Status",
         "Status Keltner", "Status VWAP",
-        "Heikin Ashi", "UT Bot", "Last Update"
+        "Last Update"
     ]
 
     if not df_result.empty:
@@ -717,128 +717,42 @@ def analyze_sector(sector_name, ticker_list):
 # ==========================================
 # SECTOR CONFIG
 # ==========================================
-SECTOR_CONFIG = {    
+SECTOR_CONFIG = {
     "IDXINDUST": [
-        "AMFG.JK", "AMIN.JK", "APII.JK", "ARKA.JK", "ARNA.JK", "ASGR.JK", "ASII.JK", "BHIT.JK", "BINO.JK", "BLUE.JK", 
-        "BNBR.JK", "CAKK.JK", "CCSI.JK", "CRSN.JK", "CTTH.JK", "DYAN.JK", "FOLK.JK", "GPSO.JK", "HEXA.JK", "HOPE.JK", 
-        "HYGN.JK", "IBFN.JK", "ICON.JK", "IKAI.JK", "IKBI.JK", "IMPC.JK", "INDX.JK", "INTA.JK", "JECC.JK", "JTPE.JK", 
-        "KBLI.JK", "KBLM.JK", "KIAS.JK", "KING.JK", "KOBX.JK", "KOIN.JK", "KONI.JK", "KUAS.JK", "LABA.JK", "LION.JK", "MARK.JK", 
-        "MDRN.JK", "MFMI.JK", "MHKI.JK", "MLIA.JK", "MUTU.JK", "NAIK.JK", "NTBK.JK", "PADA.JK", "PIPA.JK", "PTMP.JK", 
-        "SCCO.JK", "SINI.JK", "SKRN.JK", "SMIL.JK", "SOSS.JK", "SPTO.JK", "TIRA.JK", "TOTO.JK", "TRIL.JK", "UNTR.JK", 
-        "VISI.JK", "VOKS.JK", "ZBRA.JK"
+        "AMFG.JK","AMIN.JK","APII.JK","ARKA.JK","ARNA.JK","ASGR.JK"
     ],
     "IDXNONCYC": [
-        "AALI.JK", "ADES.JK", "AGAR.JK", "AISA.JK", "ALTO.JK", "AMMS.JK", "AMRT.JK", "ANDI.JK", "ANJT.JK", "ASHA.JK", 
-        "AYAM.JK", "BEEF.JK", "BEER.JK", "BISI.JK", "BOBA.JK", "BRRC.JK", "BTEK.JK", "BUAH.JK", "BUDI.JK", "BWPT.JK", 
-        "CAMP.JK", "CBUT.JK", "CEKA.JK", "CLEO.JK", "CMRY.JK", "COCO.JK", "CPIN.JK", "CRAB.JK", "CPRO.JK", "CSRA.JK", 
-        "DAYA.JK", "DEWI.JK", "DLTA.JK", "DMND.JK", "DPUM.JK", "DSFI.JK", "DSNG.JK", "ENZO.JK", "EPMT.JK", "EURO.JK", "FAPA.JK", 
-        "FISH.JK", "FLMC.JK", "FOOD.JK", "FORE.JK", "GGRM.JK", "GOLL.JK", "GOOD.JK", "GRPM.JK", "GULA.JK", "GUNA.JK", "GZCO.JK", 
-        "HERO.JK", "HMSD.JK", "HMSP.JK", "HOKI.JK","IBOS.JK", "ICBP.JK", "IKAN.JK", "INDF.JK", "IPPE.JK", "ISEA.JK", "ITIC.JK", "JARR.JK", 
-        "JAWA.JK", "JPFA.JK", "KEJU.JK", "KINO.JK", "KMDS.JK", "LAPD.JK", "LSIP.JK", "MAGP.JK", "MAIN.JK", "MAXI.JK", 
-        "MBTO.JK", "MGRO.JK", "MIDI.JK", "MKTR.JK", "MLBI.JK", "MLPL.JK", "MPPA.JK", "MRAT.JK", "MSJA.JK", "MYOR.JK","NANO.JK", 
-        "NASI.JK", "NAYZ.JK", "NEST.JK", "NSSS.JK", "OILS.JK", "PCAR.JK", "PGUN.JK", "PMMP.JK", "PNGO.JK", "PSDN.JK", "PSGO.JK", 
-        "PTPS.JK", "RANC.JK", "RLCO.JK", "ROTI.JK", "SDPC.JK", "SGRO.JK", "SIMP.JK", "SIPD.JK", "SKBM.JK", "SKLT.JK", 
-        "SMAR.JK","SOUL.JK", "SSMS.JK", "STAA.JK", "STRK.JK", "STTP.JK", "TAPG.JK", "TAYS.JK", "TBLA.JK", "TCID.JK", "TGKA.JK", 
-        "TGUK.JK", "TLDN.JK", "TRGU.JK", "UCID.JK", "UDNG.JK", "ULTJ.JK", "UNSP.JK", "UNVR.JK", "VICI.JK", "WAPO.JK", 
-        "WICO.JK", "WIIM.JK", "WINE.JK", "WMPP.JK", "WMUU.JK", "YUPI.JK"
+        "AALI.JK","ADES.JK","AGAR.JK","AISA.JK","ALTO.JK","AMMS.JK"
     ],
     "IDXFINANCE": [
-        "ABDA.JK", "ADMF.JK", "AGRO.JK", "AGRS.JK", "AHAP.JK", "AMAG.JK", "AMAR.JK", "AMOR.JK", "APIC.JK", "ARTO.JK", 
-        "ASBI.JK", "ASDM.JK", "ASJT.JK", "ASMI.JK", "ASRM.JK", "BABP.JK", "BACA.JK", "BANK.JK", "BBCA.JK", "BBHI.JK", 
-        "BBKP.JK", "BBLD.JK", "BBMD.JK", "BBNI.JK", "BBRI.JK", "BBSI.JK", "BBTN.JK", "BBYB.JK", "BCAP.JK", "BCIC.JK", 
-        "BDMN.JK", "BEKS.JK", "BFIN.JK", "BGTG.JK", "BHAT.JK", "BHIT.JK", "BINA.JK", "BJBR.JK", "BJTM.JK", "BKSW.JK", "BMAS.JK", 
-        "BMRI.JK", "BNBA.JK", "BNGA.JK", "BNII.JK", "BNLI.JK", "BPFI.JK", "BPII.JK", "BRIS.JK", "BSIM.JK", "BSWD.JK", 
-        "BTPN.JK", "BTPS.JK", "BVIC.JK", "CASA.JK", "CFIN.JK", "COIN.JK", "DEFI.JK", "DNAR.JK", "DNET.JK", "FUJI.JK", "GSMF.JK", "HBAT.JK", 
-        "HDFA.JK", "INPC.JK", "IPAC.JK", "JMAS.JK","KIJA.JK", "LIFE.JK", "LPGI.JK", "LPPS.JK", "MASB.JK", "MAYA.JK", "MCOR.JK", "MEGA.JK", 
-        "MREI.JK", "MSIE.JK", "MTWI.JK", "NICK.JK", "NISP.JK", "NOBU.JK", "OCAP.JK", "PADI.JK", "PALM.JK", "PANS.JK", "PEGE.JK", 
-        "PLAS.JK", "PNBN.JK", "PNBS.JK", "PNIN.JK", "PNLF.JK", "POLA.JK", "POOL.JK", "RELF.JK","RELI.JK", "SDRA.JK", "SFAN.JK", 
-        "SMMA.JK", "SRTG.JK", "STAR.JK", "SUPA.JK", "TIFA.JK", "TRIM.JK", "TRUS.JK", "TUGU.JK", "VICO.JK", "VINS.JK", 
-        "VRNA.JK", "VTNY.JK", "WIDI.JK", "WOMF.JK", "YOII.JK", "YULE.JK"
+        "ABDA.JK","ADMF.JK","AGRO.JK","AGRS.JK","AHAP.JK","AMAG.JK"
     ],
     "IDXCYCLIC": [
-        "ABBA.JK", "ACES.JK", "ACRO.JK", "AEGS.JK", "AKKU.JK", "ARGO.JK", "ARTA.JK", "ASLC.JK", "AUTO.JK", "BABY.JK", 
-        "BAIK.JK", "BATA.JK", "BAUT.JK", "BAYU.JK", "BELL.JK", "BIKE.JK", "BIMA.JK", "BLTZ.JK", "BMBL.JK", "BMTR.JK", "BOGA.JK", 
-        "BOLA.JK", "BOLT.JK", "BRAM.JK", "BUVA.JK", "CARS.JK", "CBMF.JK", "CINT.JK", "CLAY.JK", "CNMA.JK", "CNTX.JK", 
-        "CSAP.JK", "CSMI.JK", "DEPO.JK", "DFAM.JK", "DIGI.JK", "DOOH.JK", "DOSS.JK", "DRMA.JK", "DUCK.JK", "EAST.JK", 
-        "ECII.JK", "ENAK.JK", "ERAA.JK", "ERAL.JK", "ERTX.JK", "ESTA.JK", "ESTI.JK", "FAST.JK", "FILM.JK", "FITT.JK", 
-        "FORU.JK", "FUTR.JK", "GDYR.JK", "GEMA.JK", "GJTL.JK", "GLOB.JK", "GOLF.JK", "GRPH.JK", "GWSA.JK","HAJJ.JK", "HOME.JK", 
-        "HOTL.JK", "HRME.JK", "HRTA.JK", "IDEA.JK", "IIKP.JK", "IMAS.JK", "INDR.JK", "INDS.JK", "INOV.JK", "IPTV.JK", "ISAP.JK", 
-        "JGLE.JK", "JIHD.JK", "JSPT.JK", "KAQI.JK", "KDTN.JK", "KICI.JK", "KLIN.JK", "KOTA.JK", "KPIG.JK", "LFLO.JK", "LIVE.JK", "LMAX.JK", 
-        "LMPI.JK", "LPIN.JK", "LPPF.JK", "LUCY.JK", "MABA.JK", "MAPA.JK", "MAPB.JK", "MAPI.JK", "MARI.JK", "MDIA.JK", "MDIY.JK", "MEJA.JK", 
-        "MERI.JK", "MGNA.JK", "MGLV.JK", "MICE.JK", "MINA.JK", "MNCN.JK", "MPMX.JK", "MSIN.JK", "MSKY.JK", "MYTX.JK", "NATO.JK", 
-        "NETV.JK", "NUSA.JK", "OLIV.JK", "PANR.JK", "PART.JK", "PBRX.JK", "PDES.JK", "PGLI.JK", "PJAA.JK", "PLAN.JK","PMJS.JK", "PMUI.JK", 
-        "PNSE.JK", "POLU.JK", "POLY.JK", "PSKT.JK", "PTSP.JK", "PZZA.JK", "RAAM.JK", "RAFI.JK", "RALS.JK", "RICY.JK", 
-        "SBAT.JK", "SCMA.JK", "SCNP.JK", "SHID.JK", "SLIS.JK", "SMSM.JK", "SNLK.JK","SOFA.JK" "SONA.JK", "SOTS.JK", 
-       "SPRE.JK", "SRIL.JK", "SSTM.JK", "SWID.JK", "TELE.JK", "TFCO.JK", "TMPO.JK", "TOOL.JK", "TOYS.JK", "TRIO.JK", 
-       "TRIS.JK", "TYRE.JK",  "UFOE.JK", "UNIT.JK", "UNTD.JK", "VERN.JK", "VIVA.JK", "VKTR.JK", "WOOD.JK", "YELO.JK", 
-       "ZATA.JK", "ZONE.JK"
+        "ABBA.JK","ACES.JK","ACRO.JK","AEGS.JK","AKKU.JK","ARGO.JK"
     ],
     "IDXTECHNO": [
-        "AREA.JK", "ATIC.JK", "AWAN.JK", "AXIO.JK", "BELI.JK", "BUKA.JK", "CASH.JK", "CHIP.JK", "CYBR.JK", "DCII.JK", 
-        "DIVA.JK", "DMMX.JK", "EDGE.JK", "ELIT.JK", "EMTK.JK", "ENVY.JK", "GLVA.JK", "GOTO.JK", "HDIT.JK", "IOTF.JK", 
-        "IRSX.JK", "JATI.JK", "KIOS.JK", "KREN.JK", "LMAS.JK", "LUCK.JK", "MCAS.JK", "MLPT.JK", "MPIX.JK", "MSTI.JK", 
-        "MTDL.JK", "NFCX.JK", "NINE.JK", "PGJO.JK", "PTSN.JK", "RUNS.JK", "SKYB.JK", "TECH.JK", "TFAS.JK", "TOSK.JK", 
-        "TRON.JK", "UVCR.JK", "WGSH.JK", "WIFI.JK", "WIRG.JK", "ZYRX.JK"
+        "AREA.JK","ATIC.JK","AWAN.JK","AXIO.JK","BELI.JK","BUKA.JK"
     ],
     "IDXBASIC": [
-        "ADMG.JK", "AGII.JK", "AKPI.JK", "ALDO.JK", "ALKA.JK", "ALMI.JK", "AMMN.JK", "ANTM.JK", "APLI.JK", "ARCI.JK", 
-        "ASPR.JK", "AVIA.JK", "AYLS.JK", "BAJA.JK", "BATR.JK", "BEBS.JK", "BLES.JK", "BMSR.JK", "BRMS.JK", "BRNA.JK", 
-        "BRPT.JK", "BTON.JK", "CHEM.JK", "CITA.JK", "CLPI.JK", "CMNT.JK", "CTBN.JK", "DAAZ.JK", "DGWG.JK", "DKFT.JK", 
-        "DPNS.JK", "EKAD.JK", "EMAS.JK", "EPAC.JK", "ESIP.JK", "ESSA.JK", "ETWA.JK", "FASW.JK", "FPNI.JK", "FWCT.JK", 
-        "GDST.JK", "GGRP.JK", "HKMU.JK", "IFII.JK", "IFSH.JK", "IGAR.JK", "INAI.JK", "INCF.JK", "INCI.JK", "INCO.JK", 
-        "INKP.JK", "INRU.JK", "INTD.JK", "INTP.JK", "IPOL.JK", "ISSP.JK", "KAYU.JK", "KBRI.JK", "KDSI.JK", "KKES.JK", 
-        "KMTR.JK", "KRAS.JK", "LMSH.JK", "LTLS.JK", "MBMA.JK", "MDKA.JK", "MDKI.JK", "MINE.JK", "MOLI.JK", "NCKL.JK", 
-        "NICE.JK", "NICL.JK", "NIKL.JK", "NPGF.JK", "OBMD.JK", "OKAS.JK", "OPMS.JK", "PACK.JK", "PBID.JK", "PDPP.JK", 
-        "PICO.JK", "PPRI.JK", "PSAB.JK", "PTMR.JK", "PURE.JK", "SAMF.JK", "SBMA.JK", "SIMA.JK", "SMBR.JK", "SMCB.JK", 
-        "SMGA.JK", "SMGR.JK", "SMKL.JK", "SMLE.JK", "SOLA.JK", "SPMA.JK", "SQMI.JK", "SRSN.JK", "SULI.JK", "SWAT.JK", 
-        "TALF.JK", "TBMS.JK", "TDPM.JK", "TINS.JK", "TIRT.JK", "TKIM.JK", "TPIA.JK", "TRST.JK", "UNIC.JK", "WSBP.JK", 
-        "WTON.JK", "YPAS.JK", "ZINC.JK"
+        "ADMG.JK","AGII.JK","AKPI.JK","ALDO.JK","ALKA.JK","ALMI.JK"
     ],
     "IDXENERGY": [
-        "AADI.JK", "ABMM.JK", "ADMR.JK", "ADRO.JK", "AIMS.JK", "AKRA.JK", "ALII.JK", "APEX.JK", "ARII.JK", "ARTI.JK", 
-        "ATLA.JK", "BBRM.JK", "BESS.JK", "BIPI.JK", "BOAT.JK", "BOSS.JK", "BSML.JK", "BSSR.JK", "BULL.JK", "BUMI.JK", 
-        "BYAN.JK", "CANI.JK", "CBRE.JK", "CGAS.JK", "CNKO.JK", "COAL.JK", "CUAN.JK", "DEWA.JK", "DOID.JK", "DSSA.JK", 
-        "DWGL.JK", "ELSA.JK", "ENRG.JK", "FIRE.JK", "GEMS.JK", "GTBO.JK", "GTSI.JK", "HILL.JK", "HITS.JK", "HRUM.JK", 
-        "HUMI.JK", "IATA.JK", "INDY.JK", "INPS.JK", "ITMA.JK", "ITMG.JK", "JSKY.JK", "KKGI.JK", "KOPI.JK", "LEAD.JK", 
-        "MAHA.JK", "MBAP.JK", "MBSS.JK", "MCOL.JK", "MEDC.JK", "MKAP.JK", "MTFN.JK", "MYOH.JK", "PGAS.JK", "PKPK.JK", 
-        "PSAT.JK", "PSSI.JK", "PTBA.JK", "PTIS.JK", "PTRO.JK", "RAJA.JK", "RATU.JK", "RGAS.JK", "RIGS.JK", "RMKE.JK", 
-        "RMKO.JK", "RUIS.JK", "SEMA.JK", "SGER.JK", "SHIP.JK", "SICO.JK", "SMMT.JK", "SMRU.JK", "SOCI.JK", "SUGI.JK", 
-        "SUNI.JK", "SURE.JK", "TAMU.JK", "TCPI.JK", "TEBE.JK", "TOBA.JK", "TPMA.JK", "TRAM.JK", "UNIQ.JK", "WINS.JK", 
-        "WOWS.JK"
+        "AADI.JK","ABMM.JK","ADMR.JK","ADRO.JK","AIMS.JK","AKRA.JK"
     ],
     "IDXHEALTH": [
-        "BMHS.JK", "CARE.JK", "CHEK.JK", "DGNS.JK", "DKHH.JK", "DVLA.JK", "HALO.JK", "HEAL.JK", "IKPM.JK", "INAF.JK", 
-        "IRRA.JK", "KAEF.JK", "KLBF.JK", "LABS.JK", "MDLA.JK", "MEDS.JK", "MERK.JK", "MIKA.JK", "MMIX.JK", "MTMH.JK", 
-        "OBAT.JK", "OMED.JK", "PEHA.JK", "PEVE.JK", "PRDA.JK", "PRAY.JK", "PRIM.JK", "PYFA.JK", "RSCH.JK", "RSGK.JK", 
-        "SAME.JK", "SCPI.JK", "SIDO.JK", "SILO.JK", "SOHO.JK", "SRAJ.JK", "SURI.JK", "TSPC.JK"
+        "BMHS.JK","CARE.JK","CHEK.JK","DGNS.JK","DKHH.JK","DVLA.JK"
     ],
     "IDXINFRA": [
-        "ACST.JK", "ADHI.JK", "ARKO.JK", "ASLI.JK", "BALI.JK", "BDKR.JK", "BREN.JK", "BTEL.JK", "BUKK.JK", "CASS.JK", 
-        "CDIA.JK", "CENT.JK", "CMNP.JK", "DATA.JK", "DGIK.JK", "EXCL.JK", "GHON.JK", "GMFI.JK", "GOLD.JK", "HADE.JK", 
-        "HGII.JK", "IBST.JK", "IDPR.JK", "INET.JK", "IPCC.JK", "IPCM.JK", "ISAT.JK", "JAST.JK", "JKON.JK", "JSMR.JK", 
-        "KARW.JK", "KBLV.JK", "KEEN.JK", "KETR.JK", "KOKA.JK", "KRYA.JK", "LCKM.JK", "LINK.JK", "META.JK", "MORA.JK", 
-        "MPOW.JK", "MTEL.JK", "MTPS.JK", "MTRA.JK", "NRCA.JK", "OASA.JK", "PBSA.JK", "PGEO.JK", "PORT.JK", "POWR.JK", 
-        "PPRE.JK", "PTDU.JK", "PTPP.JK", "PTPW.JK", "RONY.JK", "SMKM.JK","SSIA.JK", "SUPR.JK", "TAMA.JK", "TBIG.JK", 
-        "TGRA.JK", "TLKM.JK", "TOPS.JK", "TOTL.JK", "TOWR.JK", "WEGE.JK", "WIKA.JK", "WSKT.JK"
+        "ACST.JK","ADHI.JK","ARKO.JK","ASLI.JK","BALI.JK","BDKR.JK"
     ],
     "IDXPROPERT": [
-        "ADCP.JK", "AMAN.JK", "APLN.JK", "ARMY.JK", "ASPI.JK", "ASRI.JK", "ATAP.JK", "BAPA.JK", "BAPI.JK", "BBSS.JK", 
-        "BCIP.JK", "BEST.JK", "BIKA.JK", "BIPP.JK", "BKDP.JK", "BKSL.JK", "BSBK.JK", "BSDE.JK", "CBDK.JK", "CBPE.JK", 
-        "CITY.JK", "COWL.JK", "CPRI.JK", "CSIS.JK", "CTRA.JK", "DADA.JK", "DART.JK", "DILD.JK", "DMAS.JK", "DUTI.JK", 
-        "ELTY.JK", "EMDE.JK", "FMII.JK", "GAMA.JK", "GMTD.JK", "GPRA.JK", "GRIA.JK", "HOMI.JK", "INDO.JK", "INPP.JK", 
-        "JRPT.JK", "KBAG.JK", "KLJA.JK", "KOCI.JK", "KSIX.JK", "LAND.JK", "LCGP.JK", "LPCK.JK", "LPKR.JK", "LPLI.JK", "MANG.JK", 
-        "MDLN.JK", "MKPI.JK", "MMLP.JK", "MPRO.JK", "MTLA.JK", "MTSM.JK", "NASA.JK", "NIRO.JK", "NZIA.JK", "OMRE.JK", 
-        "PAMG.JK", "PANI.JK", "PLIN.JK", "POLI.JK", "POLL.JK", "POSA.JK", "PPRO.JK", "PUDP.JK", "PURI.JK", "PWON.JK", 
-        "RBMS.JK", "RDTX.JK", "REAL.JK", "RIMO.JK", "RISE.JK", "ROCK.JK", "RODA.JK", "SAGE.JK", "SATU.JK", "SMDM.JK", 
-        "SMRA.JK", "TARA.JK", "TRIN.JK", "TRUE.JK", "UANG.JK", "URBN.JK", "VAST.JK", "WINR.JK"
+        "ADCP.JK","AMAN.JK","APLN.JK","ARMY.JK","ASPI.JK","ASRI.JK"
     ],
     "IDXTRANS": [
-        "AKSI.JK", "ASSA.JK", "BIRD.JK", "BLOG.JK", "BLTA.JK", "BPTR.JK", "CMPP.JK", "DEAL.JK", "ELPI.JK", "GIAA.JK", 
-        "GTRA.JK", "HAIS.JK", "HATM.JK", "HELI.JK", "IMJS.JK", "JAYA.JK", "KJEN.JK", "KLAS.JK", "LAJU.JK", "LOPI.JK", 
-        "LRNA.JK", "MIRA.JK", "MITI.JK", "MPXL.JK", "NELY.JK", "PJHB.JK", "PPGL.JK", "PURA.JK", "RCCC.JK", "SAFE.JK", "SAPX.JK", 
-        "SDMU.JK", "SMDR.JK", "TAXI.JK", "TMAS.JK", "TNCA.JK", "TRJA.JK", "TRUK.JK", "WEHA.JK"
+        "AKSI.JK","ASSA.JK","BIRD.JK","BLOG.JK","BLTA.JK","BPTR.JK"
     ]
 }
+
 
 # ==========================================
 # MAIN
@@ -846,7 +760,9 @@ SECTOR_CONFIG = {
 if __name__ == "__main__":
     print("🤖 START MARKET SCANNER PRO")
     print("   SMC LuxAlgo Style: OB Internal & Swing | BOS/CHoCH | FVG")
-    print("   Timeframe: Harian (1d) | Tujuan: Deteksi Bullish OB Touch")
+    print("   Timeframe : Harian (1d)")
+    print("   Entry     : Harga menyentuh Bullish OB")
+    print("   TP        : ob_low Bearish OB aktif terdekat di atas harga")
     print("=" * 65)
 
     for sheet_name, saham_list in SECTOR_CONFIG.items():
