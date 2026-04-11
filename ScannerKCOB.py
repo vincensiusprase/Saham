@@ -1,5 +1,9 @@
 # ==========================================
-# MARKET SCANNER - PRO (KELTNER + VWAP + HA + UT BOT + RUBBER BAND + SMC ORDER BLOCK)
+# MARKET SCANNER - PRO
+# Keltner + VWAP + HA + UT BOT + RUBBER BAND
+# + SMC LuxAlgo Style (OB Internal & Swing, BOS/CHoCH, FVG)
+# Timeframe: Harian (1d)
+# Tujuan: Deteksi saham yang menyentuh area Bullish Order Block
 # ==========================================
 
 import numpy as np
@@ -17,9 +21,16 @@ from google.oauth2.service_account import Credentials
 
 warnings.filterwarnings('ignore')
 
-# Ganti dengan Spreadsheet ID Anda
 SPREADSHEET_ID = "1QbdNwITMBF0MZXh3ousJ8WwHFYIaAxNxzNPwHOtSXlo"
-SWING_LENGTH = 5  # Parameter panjang swing (Setara LuxAlgo Internal Structure Size)
+
+# ==========================================
+# PARAMETER SMC (Mirip LuxAlgo)
+# ==========================================
+INTERNAL_SWING_LENGTH = 5    # Internal Structure (sama dengan LuxAlgo default internal)
+SWING_LENGTH          = 50   # Swing Structure (sama dengan LuxAlgo default swing)
+OB_FILTER_ATR_PERIOD  = 200  # ATR period untuk filter OB volatilitas tinggi (LuxAlgo pakai 200)
+MAX_OB_LOOKBACK       = 50   # Maksimal candle lookback saat cari OB setelah BOS
+
 
 # ==========================================
 # GOOGLE SHEET CONNECTION
@@ -30,340 +41,671 @@ def connect_gsheet(target_sheet_name):
         if not creds_json:
             print("❌ GCP_SA_KEY tidak ditemukan di environment variables.")
             return None
-
         creds_dict = json.loads(creds_json)
-        scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
         creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-        gc = gspread.authorize(creds)
-        sh = gc.open_by_key(SPREADSHEET_ID)
-
+        gc    = gspread.authorize(creds)
+        sh    = gc.open_by_key(SPREADSHEET_ID)
         try:
             worksheet = sh.worksheet(target_sheet_name)
-        except:
-            worksheet = sh.add_worksheet(title=target_sheet_name, rows="300", cols="15")
+        except Exception:
+            worksheet = sh.add_worksheet(title=target_sheet_name, rows="300", cols="30")
         return worksheet
     except Exception as e:
         print(f"❌ Error Koneksi GSheet: {e}")
         return None
 
-# ==========================================
-# SMART MONEY CONCEPTS (LUXALGO EXACT TRANSLATION)
-# ==========================================
-def calculate_smc_order_blocks(df, length=5):
-    """
-    Algoritma ini menerjemahkan logika murni LuxAlgo:
-    1. Cari Swing High
-    2. Tunggu harga Breakout (BOS)
-    3. Cari titik terendah (Lowest Low) antara Swing High dan Breakout sebagai OB
-    4. Mitigasi (Hapus) OB jika dijebol ke bawah.
-    """
-    # 1. Cari Swing Highs (Pivot Points) menggunakan Rolling Window
-    rolling_max = df['High'].rolling(window=length*2+1, center=True).max()
-    df['Is_Swing_High'] = (df['High'] == rolling_max)
-    
-    # Forward-fill data Swing High agar bisa direferensikan pada candle-candle berikutnya
-    df['SH_Idx'] = np.where(df['Is_Swing_High'], np.arange(len(df)), np.nan)
-    df['SH_Val'] = np.where(df['Is_Swing_High'], df['High'], np.nan)
-    df['Last_SH_Idx'] = df['SH_Idx'].ffill()
-    df['Last_SH_Val'] = df['SH_Val'].ffill()
 
-    # 2. Proses Deteksi Break of Structure (BOS) dan Penarikan Kotak OB
-    active_obs = []
-    last_bos_sh_idx = -1 
+# ==========================================
+# HELPER: ATR (Simple, mirip ta.atr Pine)
+# ==========================================
+def calc_atr(df, period):
+    hl  = df['High'] - df['Low']
+    hc  = (df['High'] - df['Close'].shift(1)).abs()
+    lc  = (df['Low']  - df['Close'].shift(1)).abs()
+    tr  = pd.concat([hl, hc, lc], axis=1).max(axis=1)
+    return tr.rolling(window=period, min_periods=1).mean()
 
-    # Ekstraksi array NumPy untuk iterasi super cepat (C-Speed)
+
+# ==========================================
+# SMC STEP 1: Parsed High/Low
+# Filter candle high-volatility (high-low >= 2*ATR)
+# Mirip LuxAlgo: parsedHigh = highVolBar ? low : high
+#                parsedLow  = highVolBar ? high : low
+# ==========================================
+def get_parsed_hl(df, atr_200):
+    high_vol = (df['High'] - df['Low']) >= (2.0 * atr_200)
+    parsed_high = np.where(high_vol, df['Low'],  df['High'])
+    parsed_low  = np.where(high_vol, df['High'], df['Low'])
+    return pd.Series(parsed_high, index=df.index), pd.Series(parsed_low, index=df.index)
+
+
+# ==========================================
+# SMC STEP 2: Deteksi Swing High / Swing Low
+# Menggunakan rolling window (center=True) sesuai Pine leg()
+# ==========================================
+def get_swing_points(df, length):
+    """
+    Mengembalikan boolean Series swing_high dan swing_low.
+    pivot high: high[length] adalah max dari 2*length bar sekitarnya
+    pivot low : low[length]  adalah min dari 2*length bar sekitarnya
+    Sesuai LuxAlgo leg(size): high[size] > ta.highest(size)
+    """
+    win = 2 * length + 1
+    roll_max = df['High'].rolling(window=win, center=True).max()
+    roll_min = df['Low'].rolling(window=win, center=True).min()
+    swing_high = (df['High'] == roll_max)
+    swing_low  = (df['Low']  == roll_min)
+    return swing_high, swing_low
+
+
+# ==========================================
+# SMC STEP 3: Deteksi BOS / CHoCH + Order Blocks
+# Mirip LuxAlgo displayStructure()
+# ==========================================
+def detect_structure_and_ob(df, parsed_high, parsed_low, swing_high, swing_low, atr_200, label="Swing"):
+    """
+    Mengembalikan list of dict Order Block:
+    {
+        'type'       : 'Bullish' atau 'Bearish',
+        'structure'  : 'BOS' atau 'CHoCH',
+        'ob_high'    : float,
+        'ob_low'     : float,
+        'ob_idx'     : int (bar index OB),
+        'active'     : bool,
+        'label'      : label (Internal/Swing)
+    }
+    """
+    closes       = df['Close'].values
+    highs        = df['High'].values
+    lows         = df['Low'].values
+    ph_arr       = parsed_high.values
+    pl_arr       = parsed_low.values
+    sh_arr       = swing_high.values   # bool
+    sl_arr       = swing_low.values    # bool
+
+    n = len(df)
+
+    # State
+    last_swing_high_price = np.nan
+    last_swing_high_idx   = -1
+    last_swing_low_price  = np.nan
+    last_swing_low_idx    = -1
+    trend_bias            = 0   # 0=unknown, 1=BULLISH, -1=BEARISH
+
+    # Simpan semua pivot yang terdeteksi (untuk crossed logic)
+    swing_high_crossed = False
+    swing_low_crossed  = False
+
+    order_blocks = []
+
+    for i in range(n):
+        # Update swing pivot saat terdeteksi
+        if sh_arr[i]:
+            last_swing_high_price  = highs[i]
+            last_swing_high_idx    = i
+            swing_high_crossed     = False
+
+        if sl_arr[i]:
+            last_swing_low_price   = lows[i]
+            last_swing_low_idx     = i
+            swing_low_crossed      = False
+
+        # --- Deteksi Bullish BOS/CHoCH (close crossover swing high) ---
+        if (not np.isnan(last_swing_high_price)
+                and closes[i] > last_swing_high_price
+                and not swing_high_crossed
+                and last_swing_high_idx >= 0):
+
+            swing_high_crossed = True
+            structure_type     = 'CHoCH' if trend_bias == -1 else 'BOS'
+            trend_bias         = 1  # BULLISH
+
+            # Cari Bullish OB: candle dengan parsed_low minimum
+            # antara last_swing_high_idx dan i (mirip storeOrderBlock BULLISH)
+            search_start = last_swing_high_idx
+            search_end   = i
+            if search_end > search_start:
+                segment   = pl_arr[search_start:search_end]
+                local_idx = int(np.argmin(segment))
+                ob_idx    = search_start + local_idx
+                ob_high   = ph_arr[ob_idx]
+                ob_low    = pl_arr[ob_idx]
+
+                order_blocks.append({
+                    'type'       : 'Bullish',
+                    'structure'  : structure_type,
+                    'ob_high'    : ob_high,
+                    'ob_low'     : ob_low,
+                    'ob_idx'     : ob_idx,
+                    'active'     : True,
+                    'label'      : label
+                })
+
+        # --- Deteksi Bearish BOS/CHoCH (close crossunder swing low) ---
+        if (not np.isnan(last_swing_low_price)
+                and closes[i] < last_swing_low_price
+                and not swing_low_crossed
+                and last_swing_low_idx >= 0):
+
+            swing_low_crossed  = True
+            structure_type     = 'CHoCH' if trend_bias == 1 else 'BOS'
+            trend_bias         = -1  # BEARISH
+
+            # Cari Bearish OB: candle dengan parsed_high maximum
+            search_start = last_swing_low_idx
+            search_end   = i
+            if search_end > search_start:
+                segment   = ph_arr[search_start:search_end]
+                local_idx = int(np.argmax(segment))
+                ob_idx    = search_start + local_idx
+                ob_high   = ph_arr[ob_idx]
+                ob_low    = pl_arr[ob_idx]
+
+                order_blocks.append({
+                    'type'       : 'Bearish',
+                    'structure'  : structure_type,
+                    'ob_high'    : ob_high,
+                    'ob_low'     : ob_low,
+                    'ob_idx'     : ob_idx,
+                    'active'     : True,
+                    'label'      : label
+                })
+
+    # --- Mitigasi OB (mirip deleteOrderBlocks LuxAlgo: High/Low mode) ---
+    # Bullish OB mitigated jika low < ob_low
+    # Bearish OB mitigated jika high > ob_high
+    # Cek dari bar setelah OB terbentuk hingga bar terakhir
+    for ob in order_blocks:
+        start = ob['ob_idx'] + 1
+        for j in range(start, n):
+            if ob['type'] == 'Bullish' and lows[j] < ob['ob_low']:
+                ob['active'] = False
+                break
+            if ob['type'] == 'Bearish' and highs[j] > ob['ob_high']:
+                ob['active'] = False
+                break
+
+    return order_blocks
+
+
+# ==========================================
+# SMC STEP 4: Fair Value Gap (FVG)
+# LuxAlgo: bullishFVG = low[0] > high[2] dan close[1] > high[2]
+# ==========================================
+def detect_fvg(df):
+    """
+    Mengembalikan status FVG terakhir yang masih aktif (belum dimitigasi)
+    Bullish FVG : low[bar]  > high[bar-2] (gap naik)
+    Bearish FVG : high[bar] < low[bar-2]  (gap turun)
+    Mitigasi Bullish  : low < fvg_bottom
+    Mitigasi Bearish  : high > fvg_top
+    """
     closes = df['Close'].values
-    highs = df['High'].values
-    lows = df['Low'].values
-    last_sh_idxs = df['Last_SH_Idx'].values
-    last_sh_vals = df['Last_SH_Val'].values
+    highs  = df['High'].values
+    lows   = df['Low'].values
+    opens  = df['Open'].values
+    n      = len(df)
 
-    ob_tops = np.full(len(df), np.nan)
-    ob_bottoms = np.full(len(df), np.nan)
+    fvg_list = []
 
-    for i in range(length * 2, len(df)):
-        current_close = closes[i]
-        
-        # A. MITIGASI (PENGHAPUSAN OB)
-        # Sesuai LuxAlgo: "Mitigation Source = Close". Jika candle ditutup di bawah batas OB, OB hangus.
-        active_obs = [ob for ob in active_obs if current_close >= ob['bottom']]
+    for i in range(2, n):
+        bar_delta_pct = (closes[i-1] - opens[i-1]) / (opens[i-1] + 1e-9) * 100
 
-        # B. DETEKSI BOS (Break of Structure) Bullish
-        last_sh_idx = last_sh_idxs[i-1]
-        last_sh_val = last_sh_vals[i-1]
+        # Bullish FVG
+        if lows[i] > highs[i-2] and closes[i-1] > highs[i-2]:
+            fvg_list.append({
+                'type'   : 'Bullish',
+                'top'    : lows[i],
+                'bottom' : highs[i-2],
+                'bar_idx': i,
+                'active' : True
+            })
 
-        if not np.isnan(last_sh_idx) and not np.isnan(last_sh_val):
-            last_sh_idx = int(last_sh_idx)
-            
-            # Harga Close menembus resisten Swing High terakhir
-            if current_close > last_sh_val and last_sh_idx != last_bos_sh_idx:
-                # KUNCI LUXALGO: Cari nilai terendah (min) dari Swing High ke titik Breakout
-                if last_sh_idx < i:
-                    slice_lows = lows[last_sh_idx:i+1]
-                    min_idx_offset = np.argmin(slice_lows)
-                    absolute_ob_idx = last_sh_idx + min_idx_offset
-                    
-                    # Tetapkan High dan Low dari candle terendah tersebut sebagai zona Order Block
-                    ob_top = highs[absolute_ob_idx]
-                    ob_bottom = lows[absolute_ob_idx]
+        # Bearish FVG
+        if highs[i] < lows[i-2] and closes[i-1] < lows[i-2]:
+            fvg_list.append({
+                'type'   : 'Bearish',
+                'top'    : lows[i-2],
+                'bottom' : highs[i],
+                'bar_idx': i,
+                'active' : True
+            })
 
-                    active_obs.append({'top': ob_top, 'bottom': ob_bottom})
-                    last_bos_sh_idx = last_sh_idx # Hindari deteksi ganda
-        
-        # C. Rekam OB paling ujung (terbaru) yang masih aktif untuk hari ini
-        if active_obs:
-            latest_ob = active_obs[-1] 
-            ob_tops[i] = latest_ob['top']
-            ob_bottoms[i] = latest_ob['bottom']
+    # Mitigasi
+    for fvg in fvg_list:
+        start = fvg['bar_idx'] + 1
+        for j in range(start, n):
+            if fvg['type'] == 'Bullish' and lows[j] < fvg['bottom']:
+                fvg['active'] = False
+                break
+            if fvg['type'] == 'Bearish' and highs[j] > fvg['top']:
+                fvg['active'] = False
+                break
 
-    # Kembalikan hasilnya ke Pandas DataFrame
-    df['Bullish_OB_Top'] = ob_tops
-    df['Bullish_OB_Bottom'] = ob_bottoms
+    return fvg_list
 
-    return df
+
+# ==========================================
+# FUNGSI UTAMA STATUS OB TERHADAP HARGA
+# ==========================================
+def get_ob_touch_status(price, active_obs):
+    """
+    Cek apakah harga saat ini menyentuh / berada di dalam OB aktif.
+    Prioritas: harga di dalam OB > harga baru bounce dari OB (dalam 3%)
+    """
+    best_bull_internal = None
+    best_bull_swing    = None
+    best_bear_internal = None
+    best_bear_swing    = None
+
+    for ob in active_obs:
+        if not ob['active']:
+            continue
+
+        if ob['type'] == 'Bullish':
+            # Harga di dalam OB
+            inside = ob['ob_low'] <= price <= ob['ob_high']
+            # Harga baru bounce (dalam 3% di atas OB)
+            near   = ob['ob_high'] < price <= ob['ob_high'] * 1.03
+
+            if inside or near:
+                if ob['label'] == 'Internal':
+                    if best_bull_internal is None:
+                        best_bull_internal = (ob, inside)
+                else:
+                    if best_bull_swing is None:
+                        best_bull_swing = (ob, inside)
+
+        elif ob['type'] == 'Bearish':
+            inside = ob['ob_low'] <= price <= ob['ob_high']
+            near   = ob['ob_low'] * 0.97 <= price < ob['ob_low']
+
+            if inside or near:
+                if ob['label'] == 'Internal':
+                    if best_bear_internal is None:
+                        best_bear_internal = (ob, inside)
+                else:
+                    if best_bear_swing is None:
+                        best_bear_swing = (ob, inside)
+
+    return best_bull_internal, best_bull_swing, best_bear_internal, best_bear_swing
+
 
 # ==========================================
 # ANALYZE FUNCTION
 # ==========================================
 def analyze_sector(sector_name, ticker_list):
-
-    tz_jkt = pytz.timezone("Asia/Jakarta")
+    tz_jkt       = pytz.timezone("Asia/Jakarta")
     waktu_update = datetime.now(tz_jkt).strftime("%Y-%m-%d %H:%M:%S")
-    
+
     results = []
     print(f"\n🚀 Scan {sector_name} | Total: {len(ticker_list)} saham")
 
     for ticker in ticker_list:
         try:
-            df = yf.download(ticker, period="120d", interval="1d", progress=False, auto_adjust=True, threads=False)
+            # Download data harian — lebih panjang agar swing 50 bisa berjalan
+            df = yf.download(
+                ticker, period="2y", interval="1d",
+                progress=False, auto_adjust=True, threads=False
+            )
 
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
 
-            if df.empty or len(df) < 50: 
+            if df.empty or len(df) < 120:
                 continue
 
-            # ==============================
+            df = df.copy()
+            df.reset_index(inplace=True)
+
+            # ============================================
             # 1. KELTNER CHANNEL
-            # ==============================
+            # ============================================
             df['EMA_20'] = df['Close'].ewm(span=20, adjust=False).mean()
-            
-            high_low = df['High'] - df['Low']
-            high_close = np.abs(df['High'] - df['Close'].shift(1))
-            low_close = np.abs(df['Low'] - df['Close'].shift(1))
-            true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
 
-            df['ATR_10'] = true_range.ewm(alpha=1/10, adjust=False).mean()
-
+            hl  = df['High'] - df['Low']
+            hc  = (df['High'] - df['Close'].shift(1)).abs()
+            lc  = (df['Low']  - df['Close'].shift(1)).abs()
+            tr  = pd.concat([hl, hc, lc], axis=1).max(axis=1)
+            df['ATR_10']    = tr.ewm(alpha=1/10, adjust=False).mean()
             df['KCUe_20_2'] = df['EMA_20'] + (2.0 * df['ATR_10'])
             df['KCLe_20_2'] = df['EMA_20'] - (2.0 * df['ATR_10'])
-            df['KCMa_20_2'] = df['EMA_20'] 
+            df['KCMa_20_2'] = df['EMA_20']
 
-            # ==============================
+            # ============================================
             # 2. VWAP BANDS (WEEKLY)
-            # ==============================
-            if df.index.tz is not None:
-                df.index = df.index.tz_localize(None)
+            # ============================================
+            if df['Date'].dtype != 'datetime64[ns]':
+                df['Date'] = pd.to_datetime(df['Date'])
+            if hasattr(df['Date'].iloc[0], 'tzinfo') and df['Date'].iloc[0].tzinfo is not None:
+                df['Date'] = df['Date'].dt.tz_localize(None)
 
-            df['Week'] = df.index.to_period('W')
-            df['TP'] = (df['High'] + df['Low'] + df['Close']) / 3
-            df['TPV'] = df['TP'] * df['Volume']
+            df['Week']  = df['Date'].dt.to_period('W')
+            df['TP']    = (df['High'] + df['Low'] + df['Close']) / 3
+            df['TPV']   = df['TP'] * df['Volume']
 
-            df['Cum_TPV'] = df.groupby('Week')['TPV'].cumsum()
-            df['Cum_Vol'] = df.groupby('Week')['Volume'].cumsum()
-            df['VWAP'] = df['Cum_TPV'] / df['Cum_Vol']
+            df['Cum_TPV']       = df.groupby('Week')['TPV'].cumsum()
+            df['Cum_Vol']       = df.groupby('Week')['Volume'].cumsum()
+            df['VWAP']          = df['Cum_TPV'] / df['Cum_Vol']
+            df['Dev']           = df['TP'] - df['VWAP']
+            df['Dev_Sq_Vol']    = (df['Dev'] ** 2) * df['Volume']
+            df['Cum_Dev_Sq_Vol']= df.groupby('Week')['Dev_Sq_Vol'].cumsum()
+            df['VWAP_Stdev']    = np.sqrt(df['Cum_Dev_Sq_Vol'] / df['Cum_Vol'])
+            df['VWAP_Upper']    = df['VWAP'] + (2.0 * df['VWAP_Stdev'])
+            df['VWAP_Lower']    = df['VWAP'] - (2.0 * df['VWAP_Stdev'])
 
-            df['Dev'] = df['TP'] - df['VWAP']
-            df['Dev_Sq_Vol'] = (df['Dev'] ** 2) * df['Volume']
-            df['Cum_Dev_Sq_Vol'] = df.groupby('Week')['Dev_Sq_Vol'].cumsum()
-            df['VWAP_Stdev'] = np.sqrt(df['Cum_Dev_Sq_Vol'] / df['Cum_Vol'])
-
-            df['VWAP_Upper'] = df['VWAP'] + (2.0 * df['VWAP_Stdev'])
-            df['VWAP_Lower'] = df['VWAP'] - (2.0 * df['VWAP_Stdev'])
-
-            # ==============================
-            # 3. HEIKIN ASHI CANDLES
-            # ==============================
+            # ============================================
+            # 3. HEIKIN ASHI
+            # ============================================
             df['HA_Close'] = (df['Open'] + df['High'] + df['Low'] + df['Close']) / 4
-            ha_open = np.zeros(len(df))
-            ha_open[0] = (df['Open'].iloc[0] + df['Close'].iloc[0]) / 2
+            ha_open        = np.zeros(len(df))
+            ha_open[0]     = (df['Open'].iloc[0] + df['Close'].iloc[0]) / 2
             for i in range(1, len(df)):
                 ha_open[i] = (ha_open[i-1] + df['HA_Close'].iloc[i-1]) / 2
-            df['HA_Open'] = ha_open
-            ha_status = "🟢 BULL (Hijau)" if df['HA_Close'].iloc[-1] > df['HA_Open'].iloc[-1] else "🔴 BEAR (Merah)"
+            df['HA_Open']  = ha_open
+            ha_status      = "🟢 BULL" if df['HA_Close'].iloc[-1] > df['HA_Open'].iloc[-1] else "🔴 BEAR"
 
-            # ==============================
-            # 4. UT BOT ALGORITHM
-            # ==============================
-            df['nLoss'] = 1.0 * df['ATR_10'] 
-            trail_stop = np.zeros(len(df))
-            trend = np.zeros(len(df))
-            closes = df['Close'].values
-            nLosses = df['nLoss'].values
-            trail_stop[0] = closes[0]
-            trend[0] = 1
-            
+            # ============================================
+            # 4. UT BOT
+            # ============================================
+            df['nLoss']    = 1.0 * df['ATR_10']
+            trail_stop     = np.zeros(len(df))
+            trend_ut       = np.zeros(len(df))
+            closes_arr     = df['Close'].values
+            nlosses_arr    = df['nLoss'].values
+            trail_stop[0]  = closes_arr[0]
+            trend_ut[0]    = 1
+
             for i in range(1, len(df)):
-                if np.isnan(nLosses[i]):
-                    trail_stop[i] = closes[i]
-                    trend[i] = 1
-                    continue
-                prev_trail = trail_stop[i-1]
-                prev_trend = trend[i-1]
-                curr_close = closes[i]
-                curr_nloss = nLosses[i]
-                
-                if prev_trend == 1:
-                    if curr_close > prev_trail:
-                        trail_stop[i] = max(prev_trail, curr_close - curr_nloss)
-                        trend[i] = 1
-                    else:
-                        trail_stop[i] = curr_close + curr_nloss
-                        trend[i] = -1
+                if np.isnan(nlosses_arr[i]):
+                    trail_stop[i] = closes_arr[i]; trend_ut[i] = 1; continue
+                prev_t = trail_stop[i-1]
+                prev_d = trend_ut[i-1]
+                cc     = closes_arr[i]
+                nl     = nlosses_arr[i]
+                if prev_d == 1:
+                    trail_stop[i] = max(prev_t, cc - nl) if cc > prev_t else cc + nl
+                    trend_ut[i]   = 1 if cc > prev_t else -1
                 else:
-                    if curr_close < prev_trail:
-                        trail_stop[i] = min(prev_trail, curr_close + curr_nloss)
-                        trend[i] = -1
-                    else:
-                        trail_stop[i] = curr_close - curr_nloss
-                        trend[i] = 1
-                        
-            df['UT_Trend'] = trend
-            trend_now = trend[-1]
-            trend_prev = trend[-2]
-            
-            if trend_now == 1 and trend_prev == -1: ut_signal = "🟢 BUY"
-            elif trend_now == -1 and trend_prev == 1: ut_signal = "🔴 SELL"
-            elif trend_now == 1: ut_signal = "🔼 Hold BUY"
-            else: ut_signal = "🔽 Hold SELL"
+                    trail_stop[i] = min(prev_t, cc + nl) if cc < prev_t else cc - nl
+                    trend_ut[i]   = -1 if cc < prev_t else 1
 
-            # ==============================
-            # 5. SMART MONEY CONCEPTS EXECUTION
-            # ==============================
-            df = calculate_smc_order_blocks(df, length=SWING_LENGTH)
+            t_now, t_prev = trend_ut[-1], trend_ut[-2]
+            if   t_now ==  1 and t_prev == -1: ut_signal = "🟢 BUY"
+            elif t_now == -1 and t_prev ==  1: ut_signal = "🔴 SELL"
+            elif t_now ==  1:                  ut_signal = "🔼 Hold BUY"
+            else:                              ut_signal = "🔽 Hold SELL"
 
-            # ==============================
-            # 6. EKSTRAKSI DATA & LOGIKA SCORING
-            # ==============================
-            price_today = float(df["Close"].iloc[-1])
-            upper_kc = float(df['KCUe_20_2'].iloc[-1])
-            middle_kc = float(df['KCMa_20_2'].iloc[-1]) 
-            lower_kc = float(df['KCLe_20_2'].iloc[-1])
-            
-            vwap_today = float(df['VWAP'].iloc[-1])
+            # ============================================
+            # 5. SMC — ATR 200 untuk filter OB
+            # ============================================
+            atr_200 = calc_atr(df, OB_FILTER_ATR_PERIOD)
+
+            parsed_high, parsed_low = get_parsed_hl(df, atr_200)
+
+            # --- Swing Points Internal (length=5) ---
+            sh_internal, sl_internal = get_swing_points(df, INTERNAL_SWING_LENGTH)
+
+            # --- Swing Points Swing (length=50) ---
+            sh_swing, sl_swing = get_swing_points(df, SWING_LENGTH)
+
+            # --- Order Blocks Internal ---
+            ob_internal = detect_structure_and_ob(
+                df, parsed_high, parsed_low,
+                sh_internal, sl_internal, atr_200, label="Internal"
+            )
+
+            # --- Order Blocks Swing ---
+            ob_swing = detect_structure_and_ob(
+                df, parsed_high, parsed_low,
+                sh_swing, sl_swing, atr_200, label="Swing"
+            )
+
+            all_obs = ob_internal + ob_swing
+
+            # --- Fair Value Gap ---
+            fvg_list = detect_fvg(df)
+
+            # ============================================
+            # 6. EKSTRAKSI HARGA & SCORING
+            # ============================================
+            price_today      = float(df["Close"].iloc[-1])
+            upper_kc         = float(df['KCUe_20_2'].iloc[-1])
+            middle_kc        = float(df['KCMa_20_2'].iloc[-1])
+            lower_kc         = float(df['KCLe_20_2'].iloc[-1])
+            vwap_today       = float(df['VWAP'].iloc[-1])
             vwap_upper_today = float(df['VWAP_Upper'].iloc[-1])
             vwap_lower_today = float(df['VWAP_Lower'].iloc[-1])
-            
-            atr_today = float(df['ATR_10'].iloc[-1])
-            atr_pct = (atr_today / price_today) * 100
-            potensi_tp_pct = ((middle_kc - price_today) / price_today) * 100
-            target_tp_price = middle_kc
+            atr_today        = float(df['ATR_10'].iloc[-1])
+            atr_pct          = (atr_today / price_today) * 100
+            potensi_tp_pct   = ((middle_kc - price_today) / price_today) * 100
+            target_tp_price  = middle_kc
 
-            # SMC Order Block Data
-            ob_top = df['Bullish_OB_Top'].iloc[-1]
-            ob_bottom = df['Bullish_OB_Bottom'].iloc[-1]
-            smc_status = "⚪ Tidak Ada OB Aktif"
+            # ============================================
+            # 7. STATUS SMC — OB TOUCH DETECTION
+            # ============================================
+            active_obs       = [o for o in all_obs if o['active']]
+            bull_int, bull_sw, bear_int, bear_sw = get_ob_touch_status(price_today, active_obs)
 
-            score = 0
-            kc_status = "⚪ INSIDE KC"
-            vwap_status = "⚪ DALAM BATAS WAJAR"
-            action = "WAIT"
+            # Kumpulkan semua OB aktif (untuk info kolom)
+            all_active_bull_int = [o for o in ob_internal if o['active'] and o['type']=='Bullish']
+            all_active_bull_sw  = [o for o in ob_swing   if o['active'] and o['type']=='Bullish']
+            all_active_bear_int = [o for o in ob_internal if o['active'] and o['type']=='Bearish']
+            all_active_bear_sw  = [o for o in ob_swing   if o['active'] and o['type']=='Bearish']
 
-            # --- SMC SCORING & LOGIKA STATUS ---
-            if pd.notna(ob_top) and pd.notna(ob_bottom):
-                if price_today > ob_top:
-                    # Harga sedang tinggi di atas kotak OB
-                    jarak_turun = ((price_today - ob_top) / price_today) * 100
-                    if jarak_turun <= 2.0: 
-                        smc_status = "🚀 RE-TEST (Pantulan di OB)"
-                        score += 30 # Menarik untuk dibeli karena dekat area pantulan
-                    else:
-                        smc_status = f"🟡 DI ATAS OB (Jauh {jarak_turun:.1f}%)"
-                        score += 10 # Sedang Uptrend kuat, tapi tunggu harga koreksi
-                elif ob_bottom <= price_today <= ob_top:
-                    # Harga sedang merendam di dalam kotak emas OB
-                    smc_status = "🟢 DI DALAM OB (Area Beli)"
-                    score += 50
-                # Kondisi tembus bawah OB tidak ada karena sudah otomatis dihapus di fitur Mitigasi
+            # OB terdekat (yang paling baru / paling atas index)
+            def latest_ob(obs_list):
+                if not obs_list: return None
+                return max(obs_list, key=lambda x: x['ob_idx'])
 
-            # 1. Deteksi Keltner Channel 
+            nearest_bull_int = latest_ob(all_active_bull_int)
+            nearest_bull_sw  = latest_ob(all_active_bull_sw)
+            nearest_bear_int = latest_ob(all_active_bear_int)
+            nearest_bear_sw  = latest_ob(all_active_bear_sw)
+
+            # --- Status OB String ---
+            smc_bull_int_status = "⚪ Tidak Ada"
+            smc_bull_sw_status  = "⚪ Tidak Ada"
+            smc_bear_int_status = "⚪ Tidak Ada"
+            smc_bear_sw_status  = "⚪ Tidak Ada"
+
+            ob_touch_score = 0
+            ob_touch_label = ""
+
+            # Bullish Internal OB
+            if bull_int:
+                ob, inside = bull_int
+                if inside:
+                    smc_bull_int_status = f"🎯 DI DALAM [{ob['structure']}]"
+                    ob_touch_score += 100
+                    ob_touch_label  = f"🎯 Dalam Bullish Internal OB ({ob['structure']})"
+                else:
+                    smc_bull_int_status = f"🚀 BOUNCE [{ob['structure']}]"
+                    ob_touch_score += 60
+                    ob_touch_label  = f"🚀 Bounce Bullish Internal OB ({ob['structure']})"
+            elif nearest_bull_int:
+                ob = nearest_bull_int
+                smc_bull_int_status = f"🟡 Ada OB [{ob['structure']}]"
+
+            # Bullish Swing OB
+            if bull_sw:
+                ob, inside = bull_sw
+                if inside:
+                    smc_bull_sw_status = f"🎯 DI DALAM [{ob['structure']}]"
+                    ob_touch_score += 80
+                    if not ob_touch_label:
+                        ob_touch_label = f"🎯 Dalam Bullish Swing OB ({ob['structure']})"
+                else:
+                    smc_bull_sw_status = f"🚀 BOUNCE [{ob['structure']}]"
+                    ob_touch_score += 50
+                    if not ob_touch_label:
+                        ob_touch_label = f"🚀 Bounce Bullish Swing OB ({ob['structure']})"
+            elif nearest_bull_sw:
+                ob = nearest_bull_sw
+                smc_bull_sw_status = f"🟡 Ada OB [{ob['structure']}]"
+
+            # Bearish Internal OB
+            if bear_int:
+                ob, inside = bear_int
+                if inside:
+                    smc_bear_int_status = f"⚠️ DI DALAM [{ob['structure']}] (Resistensi)"
+                    ob_touch_score -= 50
+                else:
+                    smc_bear_int_status = f"⚠️ DEKAT [{ob['structure']}] (Resistensi)"
+                    ob_touch_score -= 30
+            elif nearest_bear_int:
+                ob = nearest_bear_int
+                smc_bear_int_status = f"🟡 Ada Bearish OB [{ob['structure']}]"
+
+            # Bearish Swing OB
+            if bear_sw:
+                ob, inside = bear_sw
+                if inside:
+                    smc_bear_sw_status = f"⚠️ DI DALAM [{ob['structure']}] (Resistensi)"
+                    ob_touch_score -= 40
+                else:
+                    smc_bear_sw_status = f"⚠️ DEKAT [{ob['structure']}] (Resistensi)"
+                    ob_touch_score -= 20
+            elif nearest_bear_sw:
+                ob = nearest_bear_sw
+                smc_bear_sw_status = f"🟡 Ada Bearish OB [{ob['structure']}]"
+
+            # --- FVG Status ---
+            active_fvg      = [f for f in fvg_list if f['active']]
+            bull_fvg_active = [f for f in active_fvg if f['type'] == 'Bullish']
+            bear_fvg_active = [f for f in active_fvg if f['type'] == 'Bearish']
+
+            fvg_status = "⚪ Tidak Ada FVG"
+            for fvg in bull_fvg_active[-3:]:  # cek 3 FVG bullish terakhir
+                if fvg['bottom'] <= price_today <= fvg['top']:
+                    fvg_status = "🟢 Di Dalam Bullish FVG"
+                    ob_touch_score += 20
+                    break
+            else:
+                for fvg in bear_fvg_active[-3:]:
+                    if fvg['bottom'] <= price_today <= fvg['top']:
+                        fvg_status = "🔴 Di Dalam Bearish FVG"
+                        ob_touch_score -= 20
+                        break
+
+            # ============================================
+            # 8. SCORING KELTNER + VWAP + RUBBER BAND
+            # ============================================
+            score      = ob_touch_score
+            kc_status  = "⚪ INSIDE KC"
+            vwap_status= "⚪ NORMAL"
+            action     = "WAIT"
+
+            # Keltner
             for i in range(1, 5):
                 try:
                     p_close = float(df["Close"].iloc[-i])
                     p_upper = float(df['KCUe_20_2'].iloc[-i])
                     p_lower = float(df['KCLe_20_2'].iloc[-i])
-                    hari_teks = "Hari Ini" if i == 1 else f"{i-1} Hari Lalu"
-                    
+                    hari_teks = "Hari Ini" if i == 1 else f"{i-1}H Lalu"
                     if p_close > p_upper:
                         kc_status = f"🔥 KC BREAKOUT ATAS ({hari_teks})"
-                        action = "⚠️ RAWAN KOREKSI"
-                        score -= 50  
-                        break 
+                        score -= 50; break
                     elif p_close < p_lower:
                         kc_status = f"📉 KC BREAKOUT BAWAH ({hari_teks})"
-                        action = "🔍 PANTAU (Oversold)"
-                        score += 30  
-                        break
-                except: continue
+                        score += 30; break
+                except Exception:
+                    continue
 
-            # 2. Deteksi VWAP & Rubber Band
+            # VWAP + Rubber Band
             is_deep_oversold = (price_today < lower_kc) and (price_today < vwap_lower_today)
 
             if price_today > vwap_upper_today:
                 vwap_status = "🔥 OVERVALUED"
-                action = "🛑 JANGAN DIBELI (Pucuk)"
-                score -= 50 
+                score -= 50
             elif is_deep_oversold:
                 vwap_status = "🧊 DEEP OVERSOLD"
                 if atr_pct >= 3.0 and potensi_tp_pct >= 10.0:
-                    action = "🎯 TARGET UTAMA: RUBBER BAND"
                     score += 100
                 else:
-                    action = "🧊 OVERSOLD (Potensi <10%)"
                     score += 40
             elif price_today < vwap_lower_today:
                 vwap_status = "🧊 UNDERVALUED"
-                if "PANTAU" in action: action = "💎 OVERSOLD ENTRY"
                 score += 20
-                
-            # 3. Filter Konfirmasi Heikin Ashi
-            if "TARGET UTAMA" in action or "OVERSOLD" in action:
+
+            # ============================================
+            # 9. ACTION — Prioritas: Harga Menyentuh Bullish OB
+            # ============================================
+            if ob_touch_label:
+                # Ada sentuhan Bullish OB
                 if "BULL" in ha_status:
-                    score += 80 
-                    action = "🟢 BUY: " + action + " (HA CONFIRMED)"
+                    if "BUY" in ut_signal or "Hold BUY" in ut_signal:
+                        action = f"🟢 BUY KUAT: {ob_touch_label} + HA✅ + UT✅"
+                        score += 50
+                    else:
+                        action = f"🟡 BUY SIAP: {ob_touch_label} + HA✅ (Tunggu UT)"
+                        score += 20
                 else:
-                    action = "⏳ WAIT: " + action + " (Tunggu HA Hijau)"
-                    score -= 20 
+                    action = f"⏳ WAIT: {ob_touch_label} (Tunggu HA Hijau)"
+                    score -= 10
+            elif ob_touch_score < 0:
+                action = "🛑 HINDARI (Di Area Bearish OB)"
+            elif score > 120:
+                action = "🔍 PANTAU KETAT (Oversold + OB Dekat)"
+            elif vwap_status == "🔥 OVERVALUED":
+                action = "🛑 JANGAN BELI (Pucuk)"
+            else:
+                action = "⏳ WAIT"
+
+            # --- Info OB Terdekat untuk kolom referensi ---
+            def fmt_ob(ob):
+                if ob is None: return "-"
+                return f"{int(ob['ob_low'])}-{int(ob['ob_high'])} [{ob['structure']}]"
 
             results.append({
-                "Ticker": ticker,
-                "Action": action,
-                "Score": score,
-                "Harga Skrg": int(price_today),
-                "Target TP": int(target_tp_price),
-                "Potensi TP (%)": round(potensi_tp_pct, 2),
-                "ATR (%)": round(atr_pct, 2),
-                "SMC Status": smc_status,
-                "OB Top": int(ob_top) if pd.notna(ob_top) else "-",
-                "OB Bottom": int(ob_bottom) if pd.notna(ob_bottom) else "-",
-                "Status Keltner": kc_status,
-                "Status VWAP": vwap_status,
-                "Heikin Ashi": ha_status,
-                "UT Bot (1,10)": ut_signal,
-                "Last Update": waktu_update
+                "Ticker"              : ticker,
+                "Action"              : action,
+                "Score"               : score,
+                "Harga Skrg"          : int(price_today),
+                "Target TP (EMA20)"   : int(target_tp_price),
+                "Potensi TP (%)"      : round(potensi_tp_pct, 2),
+                "ATR (%)"             : round(atr_pct, 2),
+                # --- SMC OB Internal ---
+                "Bull Internal OB"    : smc_bull_int_status,
+                "Bull Int OB Range"   : fmt_ob(nearest_bull_int),
+                "Bear Internal OB"    : smc_bear_int_status,
+                "Bear Int OB Range"   : fmt_ob(nearest_bear_int),
+                # --- SMC OB Swing ---
+                "Bull Swing OB"       : smc_bull_sw_status,
+                "Bull Sw OB Range"    : fmt_ob(nearest_bull_sw),
+                "Bear Swing OB"       : smc_bear_sw_status,
+                "Bear Sw OB Range"    : fmt_ob(nearest_bear_sw),
+                # --- FVG ---
+                "FVG Status"          : fvg_status,
+                # --- Indikator Lain ---
+                "Status Keltner"      : kc_status,
+                "Status VWAP"         : vwap_status,
+                "Heikin Ashi"         : ha_status,
+                "UT Bot"              : ut_signal,
+                "Last Update"         : waktu_update
             })
-            
+
         except Exception as e:
-            print(f"  -> Kalkulasi gagal untuk {ticker}: {e}")
+            print(f"  -> ❌ Gagal untuk {ticker}: {e}")
 
     df_result = pd.DataFrame(results)
 
     desired_order = [
-        "Ticker", "Action", "Score", "Harga Skrg", "Target TP", "Potensi TP (%)", "ATR (%)",
-        "SMC Status", "OB Top", "OB Bottom", "Status Keltner", "Status VWAP", 
-        "Heikin Ashi", "UT Bot (1,10)", "Last Update"
+        "Ticker", "Action", "Score",
+        "Harga Skrg", "Target TP (EMA20)", "Potensi TP (%)", "ATR (%)",
+        "Bull Internal OB", "Bull Int OB Range",
+        "Bear Internal OB", "Bear Int OB Range",
+        "Bull Swing OB",    "Bull Sw OB Range",
+        "Bear Swing OB",    "Bear Sw OB Range",
+        "FVG Status",
+        "Status Keltner", "Status VWAP",
+        "Heikin Ashi", "UT Bot", "Last Update"
     ]
-    
+
     if not df_result.empty:
         available_cols = [c for c in desired_order if c in df_result.columns]
         df_result = df_result[available_cols]
@@ -371,57 +713,61 @@ def analyze_sector(sector_name, ticker_list):
 
     return df_result
 
+
 # ==========================================
-# SECTOR CONFIG 
+# SECTOR CONFIG
 # ==========================================
-SECTOR_CONFIG = {    
+SECTOR_CONFIG = {
     "IDXINDUST": [
-        "AMFG.JK", "AMIN.JK", "APII.JK", "ARKA.JK", "ARNA.JK", "ASGR.JK"
+        "AMFG.JK","AMIN.JK","APII.JK","ARKA.JK","ARNA.JK","ASGR.JK"
     ],
     "IDXNONCYC": [
-        "AALI.JK", "ADES.JK", "AGAR.JK", "AISA.JK", "ALTO.JK", "AMMS.JK"
+        "AALI.JK","ADES.JK","AGAR.JK","AISA.JK","ALTO.JK","AMMS.JK"
     ],
     "IDXFINANCE": [
-        "ABDA.JK", "ADMF.JK", "AGRO.JK", "AGRS.JK", "AHAP.JK", "AMAG.JK"
+        "ABDA.JK","ADMF.JK","AGRO.JK","AGRS.JK","AHAP.JK","AMAG.JK"
     ],
     "IDXCYCLIC": [
-        "ABBA.JK", "ACES.JK", "ACRO.JK", "AEGS.JK", "AKKU.JK", "ARGO.JK"
+        "ABBA.JK","ACES.JK","ACRO.JK","AEGS.JK","AKKU.JK","ARGO.JK"
     ],
     "IDXTECHNO": [
-        "AREA.JK", "ATIC.JK", "AWAN.JK", "AXIO.JK", "BELI.JK", "BUKA.JK"
+        "AREA.JK","ATIC.JK","AWAN.JK","AXIO.JK","BELI.JK","BUKA.JK"
     ],
     "IDXBASIC": [
-        "ADMG.JK", "AGII.JK", "AKPI.JK", "ALDO.JK", "ALKA.JK", "ALMI.JK"
+        "ADMG.JK","AGII.JK","AKPI.JK","ALDO.JK","ALKA.JK","ALMI.JK"
     ],
     "IDXENERGY": [
-        "AADI.JK", "ABMM.JK", "ADMR.JK", "ADRO.JK", "AIMS.JK", "AKRA.JK"
+        "AADI.JK","ABMM.JK","ADMR.JK","ADRO.JK","AIMS.JK","AKRA.JK"
     ],
     "IDXHEALTH": [
-        "BMHS.JK", "CARE.JK", "CHEK.JK", "DGNS.JK", "DKHH.JK", "DVLA.JK"
+        "BMHS.JK","CARE.JK","CHEK.JK","DGNS.JK","DKHH.JK","DVLA.JK"
     ],
     "IDXINFRA": [
-        "ACST.JK", "ADHI.JK", "ARKO.JK", "ASLI.JK", "BALI.JK", "BDKR.JK"
+        "ACST.JK","ADHI.JK","ARKO.JK","ASLI.JK","BALI.JK","BDKR.JK"
     ],
     "IDXPROPERT": [
-        "ADCP.JK", "AMAN.JK", "APLN.JK", "ARMY.JK", "ASPI.JK", "ASRI.JK"
+        "ADCP.JK","AMAN.JK","APLN.JK","ARMY.JK","ASPI.JK","ASRI.JK"
     ],
     "IDXTRANS": [
-        "AKSI.JK", "ASSA.JK", "BIRD.JK", "BLOG.JK", "BLTA.JK", "BPTR.JK"
+        "AKSI.JK","ASSA.JK","BIRD.JK","BLOG.JK","BLTA.JK","BPTR.JK"
     ]
 }
+
 
 # ==========================================
 # MAIN
 # ==========================================
 if __name__ == "__main__":
-
-    print("🤖 START MARKET SCANNER PRO (KELTNER + VWAP + SMC) 🤖")
+    print("🤖 START MARKET SCANNER PRO")
+    print("   SMC LuxAlgo Style: OB Internal & Swing | BOS/CHoCH | FVG")
+    print("   Timeframe: Harian (1d) | Tujuan: Deteksi Bullish OB Touch")
+    print("=" * 65)
 
     for sheet_name, saham_list in SECTOR_CONFIG.items():
         df_final = analyze_sector(sheet_name, saham_list)
-        
+
         if df_final.empty:
-            print(f"⚠️ Tidak ada data valid untuk {sheet_name}")
+            print(f"⚠️  Tidak ada data valid untuk {sheet_name}")
             continue
 
         ws = connect_gsheet(sheet_name)
@@ -429,11 +775,10 @@ if __name__ == "__main__":
             try:
                 ws.clear()
                 set_with_dataframe(ws, df_final)
-                print(f"✅ {sheet_name} Updated! Tersimpan {len(df_final)} emiten.")
+                print(f"✅ {sheet_name} — {len(df_final)} emiten tersimpan.")
             except Exception as e:
                 print(f"❌ Upload Error di {sheet_name}: {e}")
-        
-        # Delay singkat agar tidak terkena limit API yfinance atau Google Sheets
-        time.sleep(1) 
+
+        time.sleep(2)   # Hindari rate limit yfinance / Google Sheets
 
     print("\n🏁 SELESAI 🏁")
