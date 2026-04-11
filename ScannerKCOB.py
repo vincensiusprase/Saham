@@ -719,22 +719,22 @@ def analyze_sector(sector_name, ticker_list):
 # ==========================================
 SECTOR_CONFIG = {
     "IDXINDUST": [
-        "AMFG.JK","AMIN.JK","APII.JK","ARKA.JK","ARNA.JK","ASGR.JK"
+        "AMFG.JK","AMIN.JK","APII.JK","ARKA.JK","ARNA.JK","HEXA.JK"
     ],
     "IDXNONCYC": [
-        "AALI.JK","ADES.JK","AGAR.JK","AISA.JK","ALTO.JK","AMMS.JK"
+        "AALI.JK","ADES.JK","AGAR.JK","AISA.JK","CAMP.JK","AMMS.JK"
     ],
     "IDXFINANCE": [
-        "ABDA.JK","ADMF.JK","AGRO.JK","AGRS.JK","AHAP.JK","AMAG.JK"
+        "ABDA.JK","ADMF.JK","AGRO.JK","AGRS.JK","AHAP.JK","DNAR.JK"
     ],
     "IDXCYCLIC": [
-        "ABBA.JK","ACES.JK","ACRO.JK","AEGS.JK","AKKU.JK","ARGO.JK"
+        "ABBA.JK","ACES.JK","ACRO.JK","AEGS.JK","MICE.JK","ARGO.JK"
     ],
     "IDXTECHNO": [
-        "AREA.JK","ATIC.JK","AWAN.JK","AXIO.JK","BELI.JK","BUKA.JK"
+        "AREA.JK","ATIC.JK","AWAN.JK","AXIO.JK","KREN.JK","BUKA.JK"
     ],
     "IDXBASIC": [
-        "ADMG.JK","AGII.JK","AKPI.JK","ALDO.JK","ALKA.JK","ALMI.JK"
+        "ADMG.JK","AGII.JK","AKPI.JK","AVIA.JK","ALKA.JK","ALMI.JK"
     ],
     "IDXENERGY": [
         "AADI.JK","ABMM.JK","ADMR.JK","ADRO.JK","AIMS.JK","AKRA.JK"
