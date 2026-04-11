@@ -75,6 +75,7 @@ def find_bullish_order_blocks(df):
     for i in range(SWING_LENGTH * 2, len(df)):
         current_close = df['Close'].iloc[i]
         last_swing_high = df['Last_Swing_High_Price'].iloc[i-1]
+        last_swing_low = df['Last_Swing_Low_Price'].iloc[i-1]
         
         # 1. Deteksi Bullish BOS
         if pd.notna(last_swing_high) and current_close > last_swing_high and not trend_bullish:
@@ -87,8 +88,14 @@ def find_bullish_order_blocks(df):
                     ob_bottom = df['Low'].iloc[j]
                     break
         
-        # Jika harga turun menembus swing low, tren batal (Mitigasi)
-        elif current_close < df['Last_Swing_Low_Price'].iloc[i-1]:
+        # 3. Mitigasi / Pembatalan OB (REVISI PENTING)
+        # Jika harga turun dan closing menembus batas bawah OB, OB tersebut hangus (invalid)
+        if pd.notna(ob_bottom) and current_close < ob_bottom:
+            ob_top = np.nan
+            ob_bottom = np.nan
+            
+        # Jika harga turun menembus swing low utama, tren batal
+        if pd.notna(last_swing_low) and current_close < last_swing_low:
             trend_bullish = False
             
         # Simpan nilai OB yang aktif
@@ -240,21 +247,29 @@ def analyze_sector(sector_name, ticker_list):
             # SMC Order Block Status
             ob_top = df['Bullish_OB_Top'].iloc[-1]
             ob_bottom = df['Bullish_OB_Bottom'].iloc[-1]
-            smc_status = "⚪ Di Luar OB"
+            smc_status = "⚪ Tidak Ada OB Aktif"
 
             score = 0
             kc_status = "⚪ INSIDE KC"
             vwap_status = "⚪ DALAM BATAS WAJAR"
             action = "WAIT"
 
-            # SMC Scoring Bonus
+            # SMC Scoring Bonus (REVISI LOGIKA STATUS)
             if pd.notna(ob_top) and pd.notna(ob_bottom):
                 if ob_bottom <= price_today <= ob_top:
-                    smc_status = "🟢 DI DALAM BULLISH OB"
-                    score += 50 # Bonus besar jika di dalam OB
-                elif price_today > ob_top and (price_today - ob_top) / ob_top < 0.02:
-                    smc_status = "🚀 MANTUL DARI OB"
-                    score += 30
+                    smc_status = "🟢 DI DALAM OB (Area Beli)"
+                    score += 50 
+                elif price_today > ob_top:
+                    jarak_ke_ob = (price_today - ob_top) / ob_top
+                    if jarak_ke_ob <= 0.03: # Toleransi maksimal 3% di atas OB
+                        smc_status = "🚀 DEKAT/MANTUL DARI OB"
+                        score += 30
+                    else:
+                        smc_status = "🟡 DI ATAS OB (Tunggu Retest)"
+                        score += 10 # Bonus kecil karena struktur masih uptrend
+                elif price_today < ob_bottom:
+                    # Safety fallback (jika fitur mitigasi terlewat)
+                    smc_status = "🔴 OB JEBOL (Mitigated)"
 
             # 1. Deteksi Keltner Channel 
             for i in range(1, 5):
