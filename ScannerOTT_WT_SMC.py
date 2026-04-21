@@ -1,5 +1,5 @@
 # ==========================================
-# MARKET SCANNER - ULTIMATE PRO MAX (V.ATR TP)
+# MARKET SCANNER - ULTIMATE PRO MAX (V.ATR TP + OB RANGES)
 # OTT + WaveTrend + SMC (OB/FVG) + Dynamic ATR TP
 # ==========================================
 
@@ -60,7 +60,7 @@ def connect_gsheet(target_sheet_name):
         try:
             worksheet = sh.worksheet(target_sheet_name)
         except Exception:
-            worksheet = sh.add_worksheet(title=target_sheet_name, rows="300", cols="25")
+            worksheet = sh.add_worksheet(title=target_sheet_name, rows="300", cols="30")
         return worksheet
     except Exception as e:
         print(f"❌ Error Koneksi GSheet: {e}")
@@ -295,6 +295,22 @@ def analyze_sector(sector_name, ticker_list):
             active_fvg = [f for f in fvg_list if f['active']]
 
             # ============================================
+            # EKSTRAKSI OB RANGES
+            # ============================================
+            def format_ob_range(ob_list, ob_type):
+                valid_obs = [ob for ob in ob_list if ob['active'] and ob['type'] == ob_type]
+                if not valid_obs:
+                    return "-"
+                # Cari OB yang paling baru terbentuk (index terbesar)
+                latest_ob = max(valid_obs, key=lambda x: x['ob_idx'])
+                return f"{int(latest_ob['ob_low'])}-{int(latest_ob['ob_high'])}"
+
+            bull_int_range = format_ob_range(obs_int, 'Bullish')
+            bear_int_range = format_ob_range(obs_int, 'Bearish')
+            bull_sw_range  = format_ob_range(obs_sw, 'Bullish')
+            bear_sw_range  = format_ob_range(obs_sw, 'Bearish')
+
+            # ============================================
             # EKSTRAKSI HARGA & INDIKATOR HARI INI
             # ============================================
             price_today = float(df["Close"].iloc[-1])
@@ -431,6 +447,10 @@ def analyze_sector(sector_name, ticker_list):
                 "Trend (OTT)"        : trend,
                 "Harga Skrg"         : int(price_today),
                 "Status SMC"         : smc_status,
+                "Bull Int OB Range"  : bull_int_range,
+                "Bear Int OB Range"  : bear_int_range,
+                "Bull Sw OB Range"   : bull_sw_range,
+                "Bear Sw OB Range"   : bear_sw_range,
                 "Target TP"          : tp_text,
                 "Sumber TP"          : tp_source,
                 "Potensi TP"         : potensi_text,
@@ -450,7 +470,9 @@ def analyze_sector(sector_name, ticker_list):
 
     desired_order = [
         "Ticker", "Action", "Score", "Trend (OTT)",
-        "Harga Skrg", "Status SMC", "Target TP", "Sumber TP", "Potensi TP", 
+        "Harga Skrg", "Status SMC", 
+        "Bull Int OB Range", "Bear Int OB Range", "Bull Sw OB Range", "Bear Sw OB Range",
+        "Target TP", "Sumber TP", "Potensi TP", 
         "Umur OTT Cross", "WT Cross Terakhir", "Umur WT Cross", "WT Status (Now)", 
         "VAR (MAvg)", "OTT Line", "Last Update"
     ]
@@ -516,7 +538,7 @@ SECTOR_CONFIG = {
         "MERI.JK", "MGNA.JK", "MGLV.JK", "MICE.JK", "MINA.JK", "MNCN.JK", "MPMX.JK", "MSIN.JK", "MSKY.JK", "MYTX.JK", "NATO.JK", 
         "NETV.JK", "NUSA.JK", "OLIV.JK", "PANR.JK", "PART.JK", "PBRX.JK", "PDES.JK", "PGLI.JK", "PJAA.JK", "PLAN.JK","PMJS.JK", "PMUI.JK", 
         "PNSE.JK", "POLU.JK", "POLY.JK", "PSKT.JK", "PTSP.JK", "PZZA.JK", "RAAM.JK", "RAFI.JK", "RALS.JK", "RICY.JK", 
-        "SBAT.JK", "SCMA.JK", "SCNP.JK", "SHID.JK", "SLIS.JK", "SMSM.JK", "SNLK.JK","SOFA.JK" "SONA.JK", "SOTS.JK", 
+        "SBAT.JK", "SCMA.JK", "SCNP.JK", "SHID.JK", "SLIS.JK", "SMSM.JK", "SNLK.JK","SOFA.JK", "SONA.JK", "SOTS.JK", 
        "SPRE.JK", "SRIL.JK", "SSTM.JK", "SWID.JK", "TELE.JK", "TFCO.JK", "TMPO.JK", "TOOL.JK", "TOYS.JK", "TRIO.JK", 
        "TRIS.JK", "TYRE.JK",  "UFOE.JK", "UNIT.JK", "UNTD.JK", "VERN.JK", "VIVA.JK", "VKTR.JK", "WOOD.JK", "YELO.JK", 
        "ZATA.JK", "ZONE.JK"
@@ -595,7 +617,7 @@ if __name__ == "__main__":
     print("🤖 START MARKET SCANNER ULTIMATE PRO MAX (TRIAL)")
     print("   1. OTT (Trend Follower)")
     print("   2. WaveTrend (Momentum & Age Validation)")
-    print("   3. SMC: Filter Area OB/FVG")
+    print("   3. SMC: Filter Area OB/FVG & OB Ranges")
     print("   4. Dinamis TP: Bearish OB -> ATR x2 -> 5%")
     print("=" * 65)
 
