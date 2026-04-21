@@ -1,6 +1,6 @@
 # ==========================================
-# MARKET SCANNER - ULTIMATE PRO MAX
-# OTT + WaveTrend (Age/Cross Logic) + SMC 
+# MARKET SCANNER - ULTIMATE PRO MAX (V.ATR TP)
+# OTT + WaveTrend + SMC (OB/FVG) + Dynamic ATR TP
 # ==========================================
 
 import numpy as np
@@ -35,6 +35,10 @@ WT_N2 = 21
 INTERNAL_SWING_LENGTH = 5    
 SWING_LENGTH          = 50   
 OB_FILTER_ATR_PERIOD  = 200  
+
+# Dinamic TP (ATR Fallback)
+ATR_PERIOD_TP = 14
+ATR_MULTIPLIER_TP = 2.0
 
 # ==========================================
 # GOOGLE SHEET CONNECTION
@@ -137,21 +141,18 @@ def calculate_wavetrend(df, n1=10, n2=21):
     df['WT1'] = wt1
     df['WT2'] = wt2
     
-    # Deteksi WT Cross Historis (1 untuk Bullish, -1 untuk Bearish)
     n = len(df)
     wt_cross_signal = np.zeros(n)
-    
     wt1_arr = wt1.values
     wt2_arr = wt2.values
     
     for i in range(1, n):
         if wt1_arr[i-1] <= wt2_arr[i-1] and wt1_arr[i] > wt2_arr[i]:
-            wt_cross_signal[i] = 1 # Golden Cross
+            wt_cross_signal[i] = 1 
         elif wt1_arr[i-1] >= wt2_arr[i-1] and wt1_arr[i] < wt2_arr[i]:
-            wt_cross_signal[i] = -1 # Dead Cross
+            wt_cross_signal[i] = -1 
             
     df['WT_Cross_Signal'] = wt_cross_signal
-    
     return df
 
 # ==========================================
@@ -270,11 +271,15 @@ def analyze_sector(sector_name, ticker_list):
 
             df.reset_index(inplace=True)
 
-            # 1. Kalkulasi OTT & WT
+            # 1. Kalkulasi ATR (Untuk Filter OB & Dynamic TP)
+            df['ATR_14'] = calc_atr(df, ATR_PERIOD_TP)
+            atr_today = float(df['ATR_14'].iloc[-1])
+            
+            # 2. Kalkulasi OTT & WT
             df = calculate_ott(df, length=OTT_PERIOD, percent=OTT_PERCENT)
             df = calculate_wavetrend(df, n1=WT_N1, n2=WT_N2)
             
-            # 2. Kalkulasi SMC
+            # 3. Kalkulasi SMC
             atr_200 = calc_atr(df, OB_FILTER_ATR_PERIOD)
             parsed_high, parsed_low = get_parsed_hl(df, atr_200)
             
@@ -355,16 +360,26 @@ def analyze_sector(sector_name, ticker_list):
                     break
 
             # ============================================
-            # SET TARGET TP
+            # SET TARGET TP (OB vs ATR Fallback)
             # ============================================
             bear_obs_above = [o for o in active_obs if o['type'] == 'Bearish' and o['ob_low'] > price_today]
+            tp_source = ""
+            
             if bear_obs_above:
+                # Prioritas 1: Gunakan batas bawah Bearish OB terdekat
                 nearest_bear_ob = min(bear_obs_above, key=lambda x: x['ob_low'])
                 target_tp = nearest_bear_ob['ob_low']
-                potensi_tp_pct = ((target_tp - price_today) / price_today) * 100
+                tp_source = "Bearish OB"
             else:
-                target_tp = 0 
-                potensi_tp_pct = 0
+                # Prioritas 2: Gunakan Proyeksi ATR (Harga + Multiplier * ATR)
+                if not pd.isna(atr_today) and atr_today > 0:
+                    target_tp = price_today + (ATR_MULTIPLIER_TP * atr_today)
+                    tp_source = f"Proyeksi ATR (x{ATR_MULTIPLIER_TP})"
+                else:
+                    target_tp = price_today * 1.05 # Fallback absolut 5% jika ATR gagal
+                    tp_source = "Statik 5%"
+                    
+            potensi_tp_pct = ((target_tp - price_today) / price_today) * 100
 
             # ============================================
             # SCORING & ACTION (Logika Confluence)
@@ -374,7 +389,6 @@ def analyze_sector(sector_name, ticker_list):
             trend  = "UPTREND" if var_today > ott_today else "DOWNTREND"
             wt_status = "⚪ Netral"
 
-            # Deteksi WT Cross Hari Ini (Realtime)
             is_wt_bull_cross = (wt1_prev <= wt2_prev) and (wt1_today > wt2_today)
             is_wt_bear_cross = (wt1_prev >= wt2_prev) and (wt1_today < wt2_today)
             
@@ -397,7 +411,7 @@ def analyze_sector(sector_name, ticker_list):
             if "WT GOLDEN CROSS" in wt_status: score += 40
             elif "WT DEAD CROSS" in wt_status: score -= 40
 
-            # Action Logic (SMC + Trigger)
+            # Action Logic
             if smc_score > 0 and (days_since_ott_cross == "HARI INI" or is_wt_bull_cross):
                 action = "🔥 SNIPER BUY (SMC + Trigger)"
             elif days_since_ott_cross == "HARI INI" and ott_cross_type == "VAR Cross Up OTT":
@@ -407,8 +421,8 @@ def analyze_sector(sector_name, ticker_list):
             elif trend == "DOWNTREND" and smc_score < 0:
                 action = "🔴 HINDARI (Downtrend & Resistensi)"
             
-            tp_text = str(int(target_tp)) if target_tp > 0 else "High Baru"
-            potensi_text = f"{round(potensi_tp_pct, 2)}%" if target_tp > 0 else "-"
+            tp_text = str(int(target_tp))
+            potensi_text = f"{round(potensi_tp_pct, 2)}%"
 
             results.append({
                 "Ticker"             : ticker,
@@ -418,6 +432,7 @@ def analyze_sector(sector_name, ticker_list):
                 "Harga Skrg"         : int(price_today),
                 "Status SMC"         : smc_status,
                 "Target TP"          : tp_text,
+                "Sumber TP"          : tp_source,
                 "Potensi TP"         : potensi_text,
                 "Umur OTT Cross"     : days_since_ott_cross,
                 "WT Cross Terakhir"  : wt_cross_type,
@@ -435,7 +450,7 @@ def analyze_sector(sector_name, ticker_list):
 
     desired_order = [
         "Ticker", "Action", "Score", "Trend (OTT)",
-        "Harga Skrg", "Status SMC", "Target TP", "Potensi TP", 
+        "Harga Skrg", "Status SMC", "Target TP", "Sumber TP", "Potensi TP", 
         "Umur OTT Cross", "WT Cross Terakhir", "Umur WT Cross", "WT Status (Now)", 
         "VAR (MAvg)", "OTT Line", "Last Update"
     ]
@@ -471,7 +486,8 @@ if __name__ == "__main__":
     print("🤖 START MARKET SCANNER ULTIMATE PRO MAX (TRIAL)")
     print("   1. OTT (Trend Follower)")
     print("   2. WaveTrend (Momentum & Age Validation)")
-    print("   3. SMC: Filter Area OB/FVG & Dynamic TP")
+    print("   3. SMC: Filter Area OB/FVG")
+    print("   4. Dinamis TP: Bearish OB -> ATR x2 -> 5%")
     print("=" * 65)
 
     for sheet_name, saham_list in SECTOR_CONFIG.items():
