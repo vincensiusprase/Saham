@@ -1,6 +1,6 @@
 # ==========================================
-# MARKET SCANNER - ULTIMATE PRO
-# OTT + WaveTrend + SMC (LuxAlgo Logic)
+# MARKET SCANNER - ULTIMATE PRO MAX
+# OTT + WaveTrend (Age/Cross Logic) + SMC 
 # ==========================================
 
 import numpy as np
@@ -130,9 +130,28 @@ def calculate_wavetrend(df, n1=10, n2=21):
     d = (ap - esa).abs().ewm(span=n1, adjust=False).mean()
     ci = np.where(d != 0, (ap - esa) / (0.015 * d), 0)
     ci_series = pd.Series(ci, index=df.index)
+    
     wt1 = ci_series.ewm(span=n2, adjust=False).mean()
+    wt2 = wt1.rolling(window=4).mean()
+    
     df['WT1'] = wt1
-    df['WT2'] = wt1.rolling(window=4).mean()
+    df['WT2'] = wt2
+    
+    # Deteksi WT Cross Historis (1 untuk Bullish, -1 untuk Bearish)
+    n = len(df)
+    wt_cross_signal = np.zeros(n)
+    
+    wt1_arr = wt1.values
+    wt2_arr = wt2.values
+    
+    for i in range(1, n):
+        if wt1_arr[i-1] <= wt2_arr[i-1] and wt1_arr[i] > wt2_arr[i]:
+            wt_cross_signal[i] = 1 # Golden Cross
+        elif wt1_arr[i-1] >= wt2_arr[i-1] and wt1_arr[i] < wt2_arr[i]:
+            wt_cross_signal[i] = -1 # Dead Cross
+            
+    df['WT_Cross_Signal'] = wt_cross_signal
+    
     return df
 
 # ==========================================
@@ -175,7 +194,7 @@ def detect_structure_and_ob(df, parsed_high, parsed_low, swing_high, swing_low):
         if sl_arr[i]:
             last_sl_price, last_sl_idx, sl_crossed = lows[i], i, False
 
-        # Bullish Breakout (BOS/CHoCH) -> Create Bullish OB
+        # Bullish OB
         if not np.isnan(last_sh_price) and closes[i] > last_sh_price and not sh_crossed and last_sh_idx >= 0:
             sh_crossed = True
             trend_bias = 1
@@ -188,7 +207,7 @@ def detect_structure_and_ob(df, parsed_high, parsed_low, swing_high, swing_low):
                     'ob_idx': ob_idx, 'active': True
                 })
 
-        # Bearish Breakout -> Create Bearish OB
+        # Bearish OB
         if not np.isnan(last_sl_price) and closes[i] < last_sl_price and not sl_crossed and last_sl_idx >= 0:
             sl_crossed = True
             trend_bias = -1
@@ -201,7 +220,6 @@ def detect_structure_and_ob(df, parsed_high, parsed_low, swing_high, swing_low):
                     'ob_idx': ob_idx, 'active': True
                 })
 
-    # Mitigation
     for ob in order_blocks:
         start = ob['ob_idx'] + 1
         for j in range(start, n):
@@ -218,10 +236,8 @@ def detect_fvg(df):
     fvg_list = []
 
     for i in range(2, n):
-        # Bullish FVG
         if lows[i] > highs[i-2] and closes[i-1] > highs[i-2]:
             fvg_list.append({'type': 'Bullish', 'top': lows[i], 'bottom': highs[i-2], 'idx': i, 'active': True})
-        # Bearish FVG
         if highs[i] < lows[i-2] and closes[i-1] < lows[i-2]:
             fvg_list.append({'type': 'Bearish', 'top': lows[i-2], 'bottom': highs[i], 'idx': i, 'active': True})
 
@@ -246,7 +262,6 @@ def analyze_sector(sector_name, ticker_list):
 
     for ticker in ticker_list:
         try:
-            # Butuh data cukup panjang agar OB dan FVG bisa terbangun
             df = yf.download(ticker, period="1y", interval="1d", progress=False, auto_adjust=True, threads=False)
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
@@ -283,20 +298,35 @@ def analyze_sector(sector_name, ticker_list):
             wt1_today, wt2_today = float(df['WT1'].iloc[-1]), float(df['WT2'].iloc[-1])
             wt1_prev, wt2_prev   = float(df['WT1'].iloc[-2]), float(df['WT2'].iloc[-2])
 
-            # Cari Umur Sinyal OTT
+            # --- Cari Umur & Jenis Sinyal OTT ---
             lookback = 30
             df_recent = df.iloc[-lookback:]
-            days_since_cross, cross_type = "Belum Ada", "Tidak Ada"
+            
+            days_since_ott_cross, ott_cross_type = "Belum Ada", "Tidak Ada"
             for i in range(len(df_recent)-1, -1, -1):
                 if df_recent['OTT_Cross'].iloc[i] == 1:
                     jarak = len(df_recent) - 1 - i
-                    days_since_cross = f"{jarak} Hari" if jarak > 0 else "HARI INI"
-                    cross_type = "VAR Cross Up OTT"
+                    days_since_ott_cross = f"{jarak} Hari" if jarak > 0 else "HARI INI"
+                    ott_cross_type = "VAR Cross Up OTT"
                     break
                 elif df_recent['OTT_Cross'].iloc[i] == -1:
                     jarak = len(df_recent) - 1 - i
-                    days_since_cross = f"{jarak} Hari" if jarak > 0 else "HARI INI"
-                    cross_type = "VAR Cross Down OTT"
+                    days_since_ott_cross = f"{jarak} Hari" if jarak > 0 else "HARI INI"
+                    ott_cross_type = "VAR Cross Down OTT"
+                    break
+
+            # --- Cari Umur & Jenis Sinyal WT Cross ---
+            days_since_wt_cross, wt_cross_type = "Belum Ada", "Tidak Ada"
+            for i in range(len(df_recent)-1, -1, -1):
+                if df_recent['WT_Cross_Signal'].iloc[i] == 1:
+                    jarak = len(df_recent) - 1 - i
+                    days_since_wt_cross = f"{jarak} Hari" if jarak > 0 else "HARI INI"
+                    wt_cross_type = "WT Cross UP (Bullish)"
+                    break
+                elif df_recent['WT_Cross_Signal'].iloc[i] == -1:
+                    jarak = len(df_recent) - 1 - i
+                    days_since_wt_cross = f"{jarak} Hari" if jarak > 0 else "HARI INI"
+                    wt_cross_type = "WT Cross DOWN (Bearish)"
                     break
 
             # ============================================
@@ -305,14 +335,12 @@ def analyze_sector(sector_name, ticker_list):
             smc_status = "⚪ Di Luar Zona"
             smc_score = 0
             
-            # Cek Bullish OB
             for ob in active_obs:
                 if ob['type'] == 'Bullish' and ob['ob_low'] <= price_today <= ob['ob_high']:
                     smc_status = "🟢 Di Dalam Bullish OB"
                     smc_score += 40
                     break
             
-            # Cek Bullish FVG (Jika tidak di dalam OB)
             if smc_score == 0:
                 for fvg in active_fvg:
                     if fvg['type'] == 'Bullish' and fvg['bottom'] <= price_today <= fvg['top']:
@@ -320,7 +348,6 @@ def analyze_sector(sector_name, ticker_list):
                         smc_score += 30
                         break
             
-            # Cek Bearish Area (Bahaya)
             for ob in active_obs:
                 if ob['type'] == 'Bearish' and ob['ob_low'] <= price_today <= ob['ob_high']:
                     smc_status = "🔴 Di Dalam Bearish OB (Resistensi)"
@@ -328,7 +355,7 @@ def analyze_sector(sector_name, ticker_list):
                     break
 
             # ============================================
-            # SET TARGET TP (Bearish OB Terdekat di Atas)
+            # SET TARGET TP
             # ============================================
             bear_obs_above = [o for o in active_obs if o['type'] == 'Bearish' and o['ob_low'] > price_today]
             if bear_obs_above:
@@ -336,7 +363,7 @@ def analyze_sector(sector_name, ticker_list):
                 target_tp = nearest_bear_ob['ob_low']
                 potensi_tp_pct = ((target_tp - price_today) / price_today) * 100
             else:
-                target_tp = 0 # Tidak ada Bearish OB di atas
+                target_tp = 0 
                 potensi_tp_pct = 0
 
             # ============================================
@@ -347,7 +374,7 @@ def analyze_sector(sector_name, ticker_list):
             trend  = "UPTREND" if var_today > ott_today else "DOWNTREND"
             wt_status = "⚪ Netral"
 
-            # WT Momentum
+            # Deteksi WT Cross Hari Ini (Realtime)
             is_wt_bull_cross = (wt1_prev <= wt2_prev) and (wt1_today > wt2_today)
             is_wt_bear_cross = (wt1_prev >= wt2_prev) and (wt1_today < wt2_today)
             
@@ -359,45 +386,46 @@ def analyze_sector(sector_name, ticker_list):
                 if is_wt_bull_cross: wt_status = "🟢 WT Cross UP"
                 elif is_wt_bear_cross: wt_status = "🔴 WT Cross DOWN"
 
-            # Master Scoring
+            # Scoring
             if trend == "UPTREND": score += 50
             elif trend == "DOWNTREND": score -= 50
 
-            if days_since_cross == "HARI INI":
-                if cross_type == "VAR Cross Up OTT": score += 50
-                elif cross_type == "VAR Cross Down OTT": score -= 50
+            if days_since_ott_cross == "HARI INI":
+                if ott_cross_type == "VAR Cross Up OTT": score += 50
+                elif ott_cross_type == "VAR Cross Down OTT": score -= 50
 
             if "WT GOLDEN CROSS" in wt_status: score += 40
             elif "WT DEAD CROSS" in wt_status: score -= 40
 
-            # Action
-            if smc_score > 0 and (days_since_cross == "HARI INI" or is_wt_bull_cross):
+            # Action Logic (SMC + Trigger)
+            if smc_score > 0 and (days_since_ott_cross == "HARI INI" or is_wt_bull_cross):
                 action = "🔥 SNIPER BUY (SMC + Trigger)"
-            elif days_since_cross == "HARI INI" and cross_type == "VAR Cross Up OTT":
+            elif days_since_ott_cross == "HARI INI" and ott_cross_type == "VAR Cross Up OTT":
                 action = "🟢 BUY (OTT Breakout)"
             elif smc_score > 0 and trend == "UPTREND":
                 action = "🟡 AKUMULASI (Di Area Diskon)"
             elif trend == "DOWNTREND" and smc_score < 0:
                 action = "🔴 HINDARI (Downtrend & Resistensi)"
             
-            # Formatting Output TP
             tp_text = str(int(target_tp)) if target_tp > 0 else "High Baru"
             potensi_text = f"{round(potensi_tp_pct, 2)}%" if target_tp > 0 else "-"
 
             results.append({
-                "Ticker"         : ticker,
-                "Action"         : action,
-                "Score"          : score,
-                "Trend (OTT)"    : trend,
-                "Harga Skrg"     : int(price_today),
-                "Status SMC"     : smc_status,
-                "Target TP"      : tp_text,
-                "Potensi TP"     : potensi_text,
-                "Umur Event OTT" : days_since_cross,
-                "WT Status"      : wt_status,
-                "VAR (MAvg)"     : round(var_today, 2),
-                "OTT Line"       : round(ott_today, 2),
-                "Last Update"    : waktu_update
+                "Ticker"             : ticker,
+                "Action"             : action,
+                "Score"              : score,
+                "Trend (OTT)"        : trend,
+                "Harga Skrg"         : int(price_today),
+                "Status SMC"         : smc_status,
+                "Target TP"          : tp_text,
+                "Potensi TP"         : potensi_text,
+                "Umur OTT Cross"     : days_since_ott_cross,
+                "WT Cross Terakhir"  : wt_cross_type,
+                "Umur WT Cross"      : days_since_wt_cross,
+                "WT Status (Now)"    : wt_status,
+                "VAR (MAvg)"         : round(var_today, 2),
+                "OTT Line"           : round(ott_today, 2),
+                "Last Update"        : waktu_update
             })
 
         except Exception as e:
@@ -408,7 +436,8 @@ def analyze_sector(sector_name, ticker_list):
     desired_order = [
         "Ticker", "Action", "Score", "Trend (OTT)",
         "Harga Skrg", "Status SMC", "Target TP", "Potensi TP", 
-        "Umur Event OTT", "WT Status", "VAR (MAvg)", "OTT Line", "Last Update"
+        "Umur OTT Cross", "WT Cross Terakhir", "Umur WT Cross", "WT Status (Now)", 
+        "VAR (MAvg)", "OTT Line", "Last Update"
     ]
 
     if not df_result.empty:
@@ -439,9 +468,9 @@ SECTOR_CONFIG = {
 # MAIN
 # ==========================================
 if __name__ == "__main__":
-    print("🤖 START MARKET SCANNER ULTIMATE (TRIAL)")
+    print("🤖 START MARKET SCANNER ULTIMATE PRO MAX (TRIAL)")
     print("   1. OTT (Trend Follower)")
-    print("   2. WaveTrend (Momentum)")
+    print("   2. WaveTrend (Momentum & Age Validation)")
     print("   3. SMC: Filter Area OB/FVG & Dynamic TP")
     print("=" * 65)
 
