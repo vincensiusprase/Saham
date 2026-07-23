@@ -437,12 +437,25 @@ def analyze_sector(sector_name, ticker_list):
     results = []
     print(f"\n🚀 Scan {sector_name} | Total: {len(ticker_list)} saham (TRIAL)")
 
-    for ticker in ticker_list:
+for ticker in ticker_list:
+            # 1. Inisialisasi awal untuk menghindari UnboundLocalError jika terjadi kegagalan dini
+            price_today = 0.0 
+        
         try:
             df = yf.download(ticker, period="1y", interval="1d", progress=False, auto_adjust=True, threads=False)
+            
+            # 2. Fix Ekstraksi MultiIndex yfinance (v0.2.40+)
             if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
-            if df.empty or len(df) < 100:
+                # Pastikan mengambil 'Close'/'High' bukan nama tickernya
+                df.columns = [c[0] for c in df.columns]
+                
+            # 3. Fix standardisasi huruf kapital (jika yfinance mengembalikan 'close' alih-alih 'Close')
+            rename_map = {c: str(c).capitalize() for c in df.columns if str(c).islower()}
+            if rename_map:
+                df.rename(columns=rename_map, inplace=True)
+
+            # 4. Filter keamanan ganda
+            if df.empty or len(df) < 100 or 'Close' not in df.columns:
                 continue
 
             df.reset_index(inplace=True)
