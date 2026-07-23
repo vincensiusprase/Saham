@@ -473,14 +473,25 @@ def analyze_sector(sector_name, ticker_list):
             # 4. Kalkulasi Trendlines with Breaks (LuxAlgo)
             df = calculate_trendlines(df, length=TL_LENGTH, mult=TL_MULT, calc_method=TL_CALC_METHOD)
 
-            # 5. Kalkulasi Premium/Discount Zone
-            zones        = calculate_premium_discount_zones(df)
-            price_zone   = get_price_zone(price_today, zones)
+            # ============================================
+            # EKSTRAKSI HARGA & INDIKATOR HARI INI
+            # ✅ Dipindah ke sini — sebelum zona & SMC
+            # ============================================
+            price_today = float(df["Close"].iloc[-1])
+            var_today   = float(df['VAR'].iloc[-1])
+            ott_today   = float(df['OTT'].iloc[-1])
+            wt1_today, wt2_today = float(df['WT1'].iloc[-1]), float(df['WT2'].iloc[-1])
+            wt1_prev, wt2_prev   = float(df['WT1'].iloc[-2]), float(df['WT2'].iloc[-2])
 
-            is_discount  = price_today <= zones['discount_top']
-            is_premium   = price_today >= zones['premium_bottom']
-            is_equilib   = zones['eq_bottom'] <= price_today <= zones['eq_top']
-            
+            # 5. Kalkulasi Premium/Discount Zone
+            # ✅ Sekarang price_today sudah ada
+            zones      = calculate_premium_discount_zones(df)
+            price_zone = get_price_zone(price_today, zones)
+
+            is_discount = price_today <= zones['discount_top']
+            is_premium  = price_today >= zones['premium_bottom']
+            is_equilib  = zones['eq_bottom'] <= price_today <= zones['eq_top']
+
             # ============================================
             # EKSTRAKSI OB RANGES
             # ============================================
@@ -495,15 +506,6 @@ def analyze_sector(sector_name, ticker_list):
             bear_int_range = format_ob_range(obs_int, 'Bearish')
             bull_sw_range  = format_ob_range(obs_sw, 'Bullish')
             bear_sw_range  = format_ob_range(obs_sw, 'Bearish')
-
-            # ============================================
-            # EKSTRAKSI HARGA & INDIKATOR HARI INI
-            # ============================================
-            price_today = float(df["Close"].iloc[-1])
-            var_today   = float(df['VAR'].iloc[-1])
-            ott_today   = float(df['OTT'].iloc[-1])
-            wt1_today, wt2_today = float(df['WT1'].iloc[-1]), float(df['WT2'].iloc[-1])
-            wt1_prev, wt2_prev   = float(df['WT1'].iloc[-2]), float(df['WT2'].iloc[-2])
 
             # ============================================
             # EKSTRAKSI TRENDLINE DATA HARI INI
