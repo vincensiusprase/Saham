@@ -258,6 +258,56 @@ def detect_fvg(df):
     return fvg_list
 
 # ==========================================
+# PREMIUM / DISCOUNT ZONE (LuxAlgo Logic)
+# ==========================================
+def calculate_premium_discount_zones(df):
+    """
+    Translasi logika drawPremiumDiscountZones() dari PineScript LuxAlgo SMC.
+    Menggunakan trailing high/low dari seluruh data (period="1y").
+    
+    Premium    : top sampai 0.95*top + 0.05*bottom
+    Equilibrium: avg(top, bottom) ± 2.5%
+    Discount   : 0.95*bottom + 0.05*top sampai bottom
+    """
+    trailing_top    = float(df['High'].max())
+    trailing_bottom = float(df['Low'].min())
+
+    premium_top     = trailing_top
+    premium_bottom  = 0.95 * trailing_top    + 0.05 * trailing_bottom
+
+    eq_top          = 0.525 * trailing_top   + 0.475 * trailing_bottom
+    eq_bottom       = 0.525 * trailing_bottom + 0.475 * trailing_top
+    equilibrium     = (trailing_top + trailing_bottom) / 2
+
+    discount_top    = 0.95 * trailing_bottom + 0.05 * trailing_top
+    discount_bottom = trailing_bottom
+
+    return {
+        'trailing_top'    : trailing_top,
+        'trailing_bottom' : trailing_bottom,
+        'premium_top'     : premium_top,
+        'premium_bottom'  : premium_bottom,
+        'eq_top'          : eq_top,
+        'eq_bottom'       : eq_bottom,
+        'equilibrium'     : equilibrium,
+        'discount_top'    : discount_top,
+        'discount_bottom' : discount_bottom,
+    }
+
+def get_price_zone(price, zones):
+    """Tentukan posisi harga terhadap zona Premium/Equilibrium/Discount."""
+    if price >= zones['premium_bottom']:
+        return "🔴 Premium"
+    elif price <= zones['discount_top']:
+        return "🟢 Discount"
+    elif zones['eq_bottom'] <= price <= zones['eq_top']:
+        return "⚪ Equilibrium"
+    elif price > zones['eq_top']:
+        return "🟠 Menuju Premium"
+    else:
+        return "🟡 Menuju Discount"
+
+# ==========================================
 # TRENDLINES WITH BREAKS (LuxAlgo Translation)
 # ==========================================
 def calculate_trendlines(df, length=14, mult=1.0, calc_method='Atr'):
@@ -423,6 +473,14 @@ def analyze_sector(sector_name, ticker_list):
             # 4. Kalkulasi Trendlines with Breaks (LuxAlgo)
             df = calculate_trendlines(df, length=TL_LENGTH, mult=TL_MULT, calc_method=TL_CALC_METHOD)
 
+            # 5. Kalkulasi Premium/Discount Zone
+            zones        = calculate_premium_discount_zones(df)
+            price_zone   = get_price_zone(price_today, zones)
+
+            is_discount  = price_today <= zones['discount_top']
+            is_premium   = price_today >= zones['premium_bottom']
+            is_equilib   = zones['eq_bottom'] <= price_today <= zones['eq_top']
+            
             # ============================================
             # EKSTRAKSI OB RANGES
             # ============================================
@@ -560,8 +618,8 @@ def analyze_sector(sector_name, ticker_list):
                     
             potensi_tp_pct = ((target_tp - price_today) / price_today) * 100
 
-            # ============================================
-            # SCORING & ACTION (Logika Confluence)
+# ============================================
+            # SCORING
             # ============================================
             score  = smc_score
             action = "WAIT"
@@ -570,45 +628,90 @@ def analyze_sector(sector_name, ticker_list):
 
             is_wt_bull_cross = (wt1_prev <= wt2_prev) and (wt1_today > wt2_today)
             is_wt_bear_cross = (wt1_prev >= wt2_prev) and (wt1_today < wt2_today)
-            
+
             if wt1_today < -53:
                 wt_status = "🚀 WT GOLDEN CROSS (Oversold)" if is_wt_bull_cross else "🟢 Oversold"
             elif wt1_today > 53:
                 wt_status = "⚠️ WT DEAD CROSS (Overbought)" if is_wt_bear_cross else "🔴 Overbought"
             else:
-                if is_wt_bull_cross: wt_status = "🟢 WT Cross UP"
+                if is_wt_bull_cross:  wt_status = "🟢 WT Cross UP"
                 elif is_wt_bear_cross: wt_status = "🔴 WT Cross DOWN"
 
-            # Scoring OTT & WT
-            if trend == "UPTREND": score += 50
+            # Scoring OTT
+            if trend == "UPTREND":   score += 50
             elif trend == "DOWNTREND": score -= 50
 
             if days_since_ott_cross == "HARI INI":
-                if ott_cross_type == "VAR Cross Up OTT": score += 50
+                if ott_cross_type == "VAR Cross Up OTT":   score += 50
                 elif ott_cross_type == "VAR Cross Down OTT": score -= 50
 
+            # Scoring WT
             if "WT GOLDEN CROSS" in wt_status: score += 40
-            elif "WT DEAD CROSS" in wt_status: score -= 40
+            elif "WT DEAD CROSS"  in wt_status: score -= 40
+            elif is_wt_bull_cross:  score += 20
+            elif is_wt_bear_cross:  score -= 20
+            if wt1_today < -53:     score += 20
+            elif wt1_today > 53:    score -= 20
 
-            # Scoring Trendline Breakout
+            # Scoring Trendline
             score += tl_breakout_score
 
-            # Action Logic
-            # Prioritas tertinggi: konfluens SMC + OTT/WT + TL Upward Break
-            if smc_score > 0 and tl_breakout_score > 0 and (days_since_ott_cross == "HARI INI" or is_wt_bull_cross):
-                action = "🔥 SNIPER BUY (SMC + TL Break + Trigger)"
-            elif smc_score > 0 and (days_since_ott_cross == "HARI INI" or is_wt_bull_cross):
-                action = "🔥 SNIPER BUY (SMC + Trigger)"
-            elif tl_breakout_score > 0 and trend == "UPTREND":
-                action = "🟢 BUY (TL Upward Break + Uptrend)"
-            elif days_since_ott_cross == "HARI INI" and ott_cross_type == "VAR Cross Up OTT":
-                action = "🟢 BUY (OTT Breakout)"
-            elif smc_score > 0 and trend == "UPTREND":
-                action = "🟡 AKUMULASI (Di Area Diskon)"
-            elif trend == "DOWNTREND" and smc_score < 0:
-                action = "🔴 HINDARI (Downtrend & Resistensi)"
+            # Scoring Zone
+            if is_discount: score += 30
+            elif is_premium: score -= 30
+
+            # ============================================
+            # ACTION LOGIC (menggantikan versi lama)
+            # Prioritas: Discount + WT Trigger + Bullish OB
+            # ============================================
+
+            # Kondisi WT bullish trigger
+            is_wt_bullish_trigger = (
+                is_wt_bull_cross or
+                wt1_today < -53 or
+                "WT GOLDEN CROSS" in wt_status
+            )
+
+            # Kondisi di Bullish OB
+            in_bullish_ob = (smc_score > 0 and "Bullish OB" in smc_status)
+
+            # === TIER 1: SNIPER — Discount + WT Trigger + Bullish OB ===
+            if is_discount and is_wt_bullish_trigger and in_bullish_ob and tl_breakout_score > 0:
+                action = "🔥 SNIPER BUY (Discount + OB + TL Break + WT)"
+            elif is_discount and is_wt_bullish_trigger and in_bullish_ob:
+                action = "🔥 SNIPER BUY (Discount + OB + WT)"
+
+            # === TIER 2: BUY — 2 dari 3 kondisi utama terpenuhi ===
+            elif is_discount and in_bullish_ob and trend == "UPTREND":
+                action = "🟢 BUY (Discount + OB + Uptrend)"
+            elif is_discount and is_wt_bullish_trigger and trend == "UPTREND":
+                action = "🟢 BUY (Discount + WT + Uptrend)"
+            elif is_discount and tl_breakout_score > 0 and trend == "UPTREND":
+                action = "🟢 BUY (Discount + TL Break + Uptrend)"
+            elif in_bullish_ob and is_wt_bullish_trigger and trend == "UPTREND":
+                action = "🟢 BUY (OB + WT + Uptrend)"
+
+            # === TIER 3: AKUMULASI — sinyal parsial ===
+            elif is_discount and trend == "UPTREND":
+                action = "🟡 AKUMULASI (Discount + Uptrend)"
+            elif is_discount and is_wt_bullish_trigger:
+                action = "🟡 AKUMULASI (Discount + WT)"
+            elif in_bullish_ob and trend == "UPTREND":
+                action = "🟡 AKUMULASI (OB + Uptrend)"
+
+            # === TIER 4: WAIT ===
+            elif is_equilib and trend == "UPTREND":
+                action = "⏳ WAIT (Equilibrium — Pantau)"
+
+            # === TIER 5: HINDARI — area premium atau downtrend kuat ===
+            elif is_premium and trend == "DOWNTREND":
+                action = "🔴 HINDARI (Premium + Downtrend)"
+            elif is_premium and smc_score < 0:
+                action = "🔴 HINDARI (Premium + Bearish OB)"
             elif tl_breakout_score < -20:
                 action = "🔴 HINDARI (TL Downward Break)"
+            elif trend == "DOWNTREND" and smc_score < 0:
+                action = "🔴 HINDARI (Downtrend + Resistensi)"
             
             tp_text = str(int(target_tp))
             potensi_text = f"{round(potensi_tp_pct, 2)}%"
@@ -637,7 +740,13 @@ def analyze_sector(sector_name, ticker_list):
                 "WT Status (Now)"    : wt_status,
                 "VAR (MAvg)"         : round(var_today, 2),
                 "OTT Line"           : round(ott_today, 2),
-                "Last Update"        : waktu_update
+                "Last Update"        : waktu_update,
+                "Price Zone"         : price_zone,
+                "Premium Top"        : int(zones['premium_top']),
+                "Premium Bottom"     : int(zones['premium_bottom']),
+                "Equilibrium"        : int(zones['equilibrium']),
+                "Discount Top"       : int(zones['discount_top']),
+                "Discount Bottom"    : int(zones['discount_bottom']),
             })
 
         except Exception as e:
@@ -647,11 +756,13 @@ def analyze_sector(sector_name, ticker_list):
 
     desired_order = [
         "Ticker", "Action", "Score", "Trend (OTT)",
-        "Harga Skrg", "Status SMC", 
+        "Harga Skrg", "Price Zone",
+        "Premium Top", "Premium Bottom", "Equilibrium", "Discount Top", "Discount Bottom",
+        "Status SMC",
         "Bull Int OB Range", "Bear Int OB Range", "Bull Sw OB Range", "Bear Sw OB Range",
         "Target TP", "Sumber TP", "Potensi TP",
         "TL Upper", "TL Lower", "TL Position", "TL Breakout",
-        "Umur OTT Cross", "WT Cross Terakhir", "Umur WT Cross", "WT Status (Now)", 
+        "Umur OTT Cross", "WT Cross Terakhir", "Umur WT Cross", "WT Status (Now)",
         "VAR (MAvg)", "OTT Line", "Last Update"
     ]
 
