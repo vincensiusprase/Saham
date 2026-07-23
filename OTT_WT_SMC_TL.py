@@ -447,53 +447,47 @@ def analyze_sector(sector_name, ticker_list):
 
             df.reset_index(inplace=True)
 
-            # 1. Kalkulasi ATR (Untuk Filter OB & Dynamic TP)
+            # 1. ATR
             df['ATR_14'] = calc_atr(df, ATR_PERIOD_TP)
             atr_today = float(df['ATR_14'].iloc[-1])
-            
-            # 2. Kalkulasi OTT & WT
+
+            # 2. OTT & WT
             df = calculate_ott(df, length=OTT_PERIOD, percent=OTT_PERCENT)
             df = calculate_wavetrend(df, n1=WT_N1, n2=WT_N2)
-            
-            # 3. Kalkulasi SMC
+
+            # 3. SMC
             atr_200 = calc_atr(df, OB_FILTER_ATR_PERIOD)
             parsed_high, parsed_low = get_parsed_hl(df, atr_200)
-            
             sh_int, sl_int = get_swing_points(df, INTERNAL_SWING_LENGTH)
-            sh_sw, sl_sw = get_swing_points(df, SWING_LENGTH)
-            
+            sh_sw,  sl_sw  = get_swing_points(df, SWING_LENGTH)
             obs_int = detect_structure_and_ob(df, parsed_high, parsed_low, sh_int, sl_int)
-            obs_sw  = detect_structure_and_ob(df, parsed_high, parsed_low, sh_sw, sl_sw)
-            all_obs = obs_int + obs_sw
+            obs_sw  = detect_structure_and_ob(df, parsed_high, parsed_low, sh_sw,  sl_sw)
+            all_obs    = obs_int + obs_sw
             active_obs = [o for o in all_obs if o['active']]
-            
-            fvg_list = detect_fvg(df)
+            fvg_list   = detect_fvg(df)
             active_fvg = [f for f in fvg_list if f['active']]
 
-            # 4. Kalkulasi Trendlines with Breaks (LuxAlgo)
+            # 4. Trendlines
             df = calculate_trendlines(df, length=TL_LENGTH, mult=TL_MULT, calc_method=TL_CALC_METHOD)
 
             # ============================================
-            # EKSTRAKSI HARGA & INDIKATOR HARI INI
-            # ✅ Dipindah ke sini — sebelum zona & SMC
+            # EKSTRAKSI HARGA & INDIKATOR — harus pertama
             # ============================================
-            price_today = float(df["Close"].iloc[-1])
-            var_today   = float(df['VAR'].iloc[-1])
-            ott_today   = float(df['OTT'].iloc[-1])
-            wt1_today, wt2_today = float(df['WT1'].iloc[-1]), float(df['WT2'].iloc[-1])
-            wt1_prev, wt2_prev   = float(df['WT1'].iloc[-2]), float(df['WT2'].iloc[-2])
+            price_today            = float(df["Close"].iloc[-1])
+            var_today              = float(df['VAR'].iloc[-1])
+            ott_today              = float(df['OTT'].iloc[-1])
+            wt1_today, wt2_today   = float(df['WT1'].iloc[-1]), float(df['WT2'].iloc[-1])
+            wt1_prev,  wt2_prev    = float(df['WT1'].iloc[-2]), float(df['WT2'].iloc[-2])
 
-            # 5. Kalkulasi Premium/Discount Zone
-            # ✅ Sekarang price_today sudah ada
+            # 5. Premium/Discount Zone
             zones      = calculate_premium_discount_zones(df)
             price_zone = get_price_zone(price_today, zones)
-
             is_discount = price_today <= zones['discount_top']
             is_premium  = price_today >= zones['premium_bottom']
             is_equilib  = zones['eq_bottom'] <= price_today <= zones['eq_top']
 
             # ============================================
-            # EKSTRAKSI OB RANGES
+            # OB RANGES
             # ============================================
             def format_ob_range(ob_list, ob_type):
                 valid_obs = [ob for ob in ob_list if ob['active'] and ob['type'] == ob_type]
@@ -504,39 +498,32 @@ def analyze_sector(sector_name, ticker_list):
 
             bull_int_range = format_ob_range(obs_int, 'Bullish')
             bear_int_range = format_ob_range(obs_int, 'Bearish')
-            bull_sw_range  = format_ob_range(obs_sw, 'Bullish')
-            bear_sw_range  = format_ob_range(obs_sw, 'Bearish')
+            bull_sw_range  = format_ob_range(obs_sw,  'Bullish')
+            bear_sw_range  = format_ob_range(obs_sw,  'Bearish')
 
             # ============================================
-            # EKSTRAKSI TRENDLINE DATA HARI INI
+            # TRENDLINE DATA
             # ============================================
             tl_upper_today    = float(df['TL_Upper'].iloc[-1])
             tl_lower_today    = float(df['TL_Lower'].iloc[-1])
             tl_breakout_today = int(df['TL_Breakout'].iloc[-1])
 
-            # Cek apakah ada breakout dalam 5 bar terakhir (bukan hanya hari ini)
-            lookback_tl = 5
-            tl_recent = df['TL_Breakout'].iloc[-lookback_tl:]
-            
-            tl_breakout_signal = "-"
-            tl_breakout_score  = 0
+            lookback_tl     = 5
+            tl_recent       = df['TL_Breakout'].iloc[-lookback_tl:]
             last_up_break   = (tl_recent == 1).any()
             last_down_break = (tl_recent == -1).any()
 
+            tl_breakout_signal = "-"
+            tl_breakout_score  = 0
             if tl_breakout_today == 1:
-                tl_breakout_signal = "🟢 Upward Break (HARI INI)"
-                tl_breakout_score  = 30
+                tl_breakout_signal = "🟢 Upward Break (HARI INI)";  tl_breakout_score = 30
             elif tl_breakout_today == -1:
-                tl_breakout_signal = "🔴 Downward Break (HARI INI)"
-                tl_breakout_score  = -30
+                tl_breakout_signal = "🔴 Downward Break (HARI INI)"; tl_breakout_score = -30
             elif last_up_break:
-                tl_breakout_signal = "🟡 Upward Break (<5 Bar)"
-                tl_breakout_score  = 15
+                tl_breakout_signal = "🟡 Upward Break (<5 Bar)";     tl_breakout_score = 15
             elif last_down_break:
-                tl_breakout_signal = "🟠 Downward Break (<5 Bar)"
-                tl_breakout_score  = -15
+                tl_breakout_signal = "🟠 Downward Break (<5 Bar)";   tl_breakout_score = -15
 
-            # Posisi harga vs trendline
             if price_today > tl_upper_today:
                 tl_position = "📈 Di Atas Upper TL"
             elif price_today < tl_lower_today:
@@ -544,88 +531,74 @@ def analyze_sector(sector_name, ticker_list):
             else:
                 tl_position = "↔️ Di Antara TL"
 
-            # --- Cari Umur & Jenis Sinyal OTT ---
-            lookback = 30
+            # ============================================
+            # OTT CROSS AGE
+            # ============================================
+            lookback  = 30
             df_recent = df.iloc[-lookback:]
-            
             days_since_ott_cross, ott_cross_type = "Belum Ada", "Tidak Ada"
             for i in range(len(df_recent)-1, -1, -1):
                 if df_recent['OTT_Cross'].iloc[i] == 1:
                     jarak = len(df_recent) - 1 - i
                     days_since_ott_cross = f"{jarak} Hari" if jarak > 0 else "HARI INI"
-                    ott_cross_type = "VAR Cross Up OTT"
-                    break
+                    ott_cross_type = "VAR Cross Up OTT"; break
                 elif df_recent['OTT_Cross'].iloc[i] == -1:
                     jarak = len(df_recent) - 1 - i
                     days_since_ott_cross = f"{jarak} Hari" if jarak > 0 else "HARI INI"
-                    ott_cross_type = "VAR Cross Down OTT"
-                    break
+                    ott_cross_type = "VAR Cross Down OTT"; break
 
-            # --- Cari Umur & Jenis Sinyal WT Cross ---
+            # ============================================
+            # WT CROSS AGE
+            # ============================================
             days_since_wt_cross, wt_cross_type = "Belum Ada", "Tidak Ada"
             for i in range(len(df_recent)-1, -1, -1):
                 if df_recent['WT_Cross_Signal'].iloc[i] == 1:
                     jarak = len(df_recent) - 1 - i
                     days_since_wt_cross = f"{jarak} Hari" if jarak > 0 else "HARI INI"
-                    wt_cross_type = "WT Cross UP (Bullish)"
-                    break
+                    wt_cross_type = "WT Cross UP (Bullish)"; break
                 elif df_recent['WT_Cross_Signal'].iloc[i] == -1:
                     jarak = len(df_recent) - 1 - i
                     days_since_wt_cross = f"{jarak} Hari" if jarak > 0 else "HARI INI"
-                    wt_cross_type = "WT Cross DOWN (Bearish)"
-                    break
+                    wt_cross_type = "WT Cross DOWN (Bearish)"; break
 
             # ============================================
-            # CEK POSISI HARGA TERHADAP SMC (OB & FVG)
+            # SMC STATUS
             # ============================================
             smc_status = "⚪ Di Luar Zona"
-            smc_score = 0
-            
+            smc_score  = 0
             for ob in active_obs:
                 if ob['type'] == 'Bullish' and ob['ob_low'] <= price_today <= ob['ob_high']:
-                    smc_status = "🟢 Di Dalam Bullish OB"
-                    smc_score += 40
-                    break
-            
+                    smc_status = "🟢 Di Dalam Bullish OB"; smc_score += 40; break
             if smc_score == 0:
                 for fvg in active_fvg:
                     if fvg['type'] == 'Bullish' and fvg['bottom'] <= price_today <= fvg['top']:
-                        smc_status = "🟢 Di Dalam Bullish FVG"
-                        smc_score += 30
-                        break
-            
+                        smc_status = "🟢 Di Dalam Bullish FVG"; smc_score += 30; break
             for ob in active_obs:
                 if ob['type'] == 'Bearish' and ob['ob_low'] <= price_today <= ob['ob_high']:
-                    smc_status = "🔴 Di Dalam Bearish OB (Resistensi)"
-                    smc_score -= 40
-                    break
+                    smc_status = "🔴 Di Dalam Bearish OB (Resistensi)"; smc_score -= 40; break
 
             # ============================================
-            # SET TARGET TP (OB vs ATR Fallback)
+            # TARGET TP
             # ============================================
             bear_obs_above = [o for o in active_obs if o['type'] == 'Bearish' and o['ob_low'] > price_today]
-            tp_source = ""
-            
             if bear_obs_above:
                 nearest_bear_ob = min(bear_obs_above, key=lambda x: x['ob_low'])
                 target_tp = nearest_bear_ob['ob_low']
                 tp_source = "Bearish OB"
+            elif not pd.isna(atr_today) and atr_today > 0:
+                target_tp = price_today + (ATR_MULTIPLIER_TP * atr_today)
+                tp_source = f"Proyeksi ATR (x{ATR_MULTIPLIER_TP})"
             else:
-                if not pd.isna(atr_today) and atr_today > 0:
-                    target_tp = price_today + (ATR_MULTIPLIER_TP * atr_today)
-                    tp_source = f"Proyeksi ATR (x{ATR_MULTIPLIER_TP})"
-                else:
-                    target_tp = price_today * 1.05
-                    tp_source = "Statik 5%"
-                    
+                target_tp = price_today * 1.05
+                tp_source = "Statik 5%"
             potensi_tp_pct = ((target_tp - price_today) / price_today) * 100
 
-# ============================================
+            # ============================================
             # SCORING
             # ============================================
-            score  = smc_score
-            action = "WAIT"
-            trend  = "UPTREND" if var_today > ott_today else "DOWNTREND"
+            score    = smc_score
+            action   = "WAIT"
+            trend    = "UPTREND" if var_today > ott_today else "DOWNTREND"
             wt_status = "⚪ Netral"
 
             is_wt_bull_cross = (wt1_prev <= wt2_prev) and (wt1_today > wt2_today)
@@ -636,54 +609,42 @@ def analyze_sector(sector_name, ticker_list):
             elif wt1_today > 53:
                 wt_status = "⚠️ WT DEAD CROSS (Overbought)" if is_wt_bear_cross else "🔴 Overbought"
             else:
-                if is_wt_bull_cross:  wt_status = "🟢 WT Cross UP"
+                if is_wt_bull_cross:   wt_status = "🟢 WT Cross UP"
                 elif is_wt_bear_cross: wt_status = "🔴 WT Cross DOWN"
 
-            # Scoring OTT
-            if trend == "UPTREND":   score += 50
+            if trend == "UPTREND":     score += 50
             elif trend == "DOWNTREND": score -= 50
 
             if days_since_ott_cross == "HARI INI":
-                if ott_cross_type == "VAR Cross Up OTT":   score += 50
+                if ott_cross_type == "VAR Cross Up OTT":    score += 50
                 elif ott_cross_type == "VAR Cross Down OTT": score -= 50
 
-            # Scoring WT
-            if "WT GOLDEN CROSS" in wt_status: score += 40
-            elif "WT DEAD CROSS"  in wt_status: score -= 40
-            elif is_wt_bull_cross:  score += 20
-            elif is_wt_bear_cross:  score -= 20
-            if wt1_today < -53:     score += 20
-            elif wt1_today > 53:    score -= 20
+            if "WT GOLDEN CROSS" in wt_status:  score += 40
+            elif "WT DEAD CROSS" in wt_status:   score -= 40
+            elif is_wt_bull_cross:               score += 20
+            elif is_wt_bear_cross:               score -= 20
+            if wt1_today < -53:   score += 20
+            elif wt1_today > 53:  score -= 20
 
-            # Scoring Trendline
             score += tl_breakout_score
 
-            # Scoring Zone
-            if is_discount: score += 30
+            if is_discount:  score += 30
             elif is_premium: score -= 30
 
             # ============================================
-            # ACTION LOGIC (menggantikan versi lama)
-            # Prioritas: Discount + WT Trigger + Bullish OB
+            # ACTION LOGIC
             # ============================================
-
-            # Kondisi WT bullish trigger
             is_wt_bullish_trigger = (
                 is_wt_bull_cross or
                 wt1_today < -53 or
                 "WT GOLDEN CROSS" in wt_status
             )
-
-            # Kondisi di Bullish OB
             in_bullish_ob = (smc_score > 0 and "Bullish OB" in smc_status)
 
-            # === TIER 1: SNIPER — Discount + WT Trigger + Bullish OB ===
             if is_discount and is_wt_bullish_trigger and in_bullish_ob and tl_breakout_score > 0:
                 action = "🔥 SNIPER BUY (Discount + OB + TL Break + WT)"
             elif is_discount and is_wt_bullish_trigger and in_bullish_ob:
                 action = "🔥 SNIPER BUY (Discount + OB + WT)"
-
-            # === TIER 2: BUY — 2 dari 3 kondisi utama terpenuhi ===
             elif is_discount and in_bullish_ob and trend == "UPTREND":
                 action = "🟢 BUY (Discount + OB + Uptrend)"
             elif is_discount and is_wt_bullish_trigger and trend == "UPTREND":
@@ -692,20 +653,14 @@ def analyze_sector(sector_name, ticker_list):
                 action = "🟢 BUY (Discount + TL Break + Uptrend)"
             elif in_bullish_ob and is_wt_bullish_trigger and trend == "UPTREND":
                 action = "🟢 BUY (OB + WT + Uptrend)"
-
-            # === TIER 3: AKUMULASI — sinyal parsial ===
             elif is_discount and trend == "UPTREND":
                 action = "🟡 AKUMULASI (Discount + Uptrend)"
             elif is_discount and is_wt_bullish_trigger:
                 action = "🟡 AKUMULASI (Discount + WT)"
             elif in_bullish_ob and trend == "UPTREND":
                 action = "🟡 AKUMULASI (OB + Uptrend)"
-
-            # === TIER 4: WAIT ===
             elif is_equilib and trend == "UPTREND":
                 action = "⏳ WAIT (Equilibrium — Pantau)"
-
-            # === TIER 5: HINDARI — area premium atau downtrend kuat ===
             elif is_premium and trend == "DOWNTREND":
                 action = "🔴 HINDARI (Premium + Downtrend)"
             elif is_premium and smc_score < 0:
@@ -714,41 +669,38 @@ def analyze_sector(sector_name, ticker_list):
                 action = "🔴 HINDARI (TL Downward Break)"
             elif trend == "DOWNTREND" and smc_score < 0:
                 action = "🔴 HINDARI (Downtrend + Resistensi)"
-            
-            tp_text = str(int(target_tp))
-            potensi_text = f"{round(potensi_tp_pct, 2)}%"
 
             results.append({
-                "Ticker"             : ticker,
-                "Action"             : action,
-                "Score"              : score,
-                "Trend (OTT)"        : trend,
-                "Harga Skrg"         : int(price_today),
-                "Status SMC"         : smc_status,
-                "Bull Int OB Range"  : bull_int_range,
-                "Bear Int OB Range"  : bear_int_range,
-                "Bull Sw OB Range"   : bull_sw_range,
-                "Bear Sw OB Range"   : bear_sw_range,
-                "Target TP"          : tp_text,
-                "Sumber TP"          : tp_source,
-                "Potensi TP"         : potensi_text,
-                "TL Upper"           : int(tl_upper_today),
-                "TL Lower"           : int(tl_lower_today),
-                "TL Position"        : tl_position,
-                "TL Breakout"        : tl_breakout_signal,
-                "Umur OTT Cross"     : days_since_ott_cross,
-                "WT Cross Terakhir"  : wt_cross_type,
-                "Umur WT Cross"      : days_since_wt_cross,
-                "WT Status (Now)"    : wt_status,
-                "VAR (MAvg)"         : round(var_today, 2),
-                "OTT Line"           : round(ott_today, 2),
-                "Last Update"        : waktu_update,
-                "Price Zone"         : price_zone,
-                "Premium Top"        : int(zones['premium_top']),
-                "Premium Bottom"     : int(zones['premium_bottom']),
-                "Equilibrium"        : int(zones['equilibrium']),
-                "Discount Top"       : int(zones['discount_top']),
-                "Discount Bottom"    : int(zones['discount_bottom']),
+                "Ticker"           : ticker,
+                "Action"           : action,
+                "Score"            : score,
+                "Trend (OTT)"      : trend,
+                "Harga Skrg"       : int(price_today),
+                "Price Zone"       : price_zone,
+                "Premium Top"      : int(zones['premium_top']),
+                "Premium Bottom"   : int(zones['premium_bottom']),
+                "Equilibrium"      : int(zones['equilibrium']),
+                "Discount Top"     : int(zones['discount_top']),
+                "Discount Bottom"  : int(zones['discount_bottom']),
+                "Status SMC"       : smc_status,
+                "Bull Int OB Range": bull_int_range,
+                "Bear Int OB Range": bear_int_range,
+                "Bull Sw OB Range" : bull_sw_range,
+                "Bear Sw OB Range" : bear_sw_range,
+                "Target TP"        : str(int(target_tp)),
+                "Sumber TP"        : tp_source,
+                "Potensi TP"       : f"{round(potensi_tp_pct, 2)}%",
+                "TL Upper"         : int(tl_upper_today),
+                "TL Lower"         : int(tl_lower_today),
+                "TL Position"      : tl_position,
+                "TL Breakout"      : tl_breakout_signal,
+                "Umur OTT Cross"   : days_since_ott_cross,
+                "WT Cross Terakhir": wt_cross_type,
+                "Umur WT Cross"    : days_since_wt_cross,
+                "WT Status (Now)"  : wt_status,
+                "VAR (MAvg)"       : round(var_today, 2),
+                "OTT Line"         : round(ott_today, 2),
+                "Last Update"      : waktu_update,
             })
 
         except Exception as e:
